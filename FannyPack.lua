@@ -557,14 +557,17 @@ local function ShowFrameDebug()
     for _, name in ipairs(names) do
         local frameName, field = name:match("^(%w+)%.(%w+)$")
         local region = field and _G[frameName] and _G[frameName][field] or _G[name]
+        local left = region and region:GetLeft()
         if not region then
             print(("  %s: missing"):format(name))
-        elseif not region:GetLeft() then
+        elseif issecretvalue and (issecretvalue(left) or issecretvalue(region:GetTop())) then
+            print(("  %s: secret"):format(name)) -- the client hides its place from addons just now
+        elseif not left then
             print(("  %s: not placed"):format(name))
         else
             local scale = region:GetEffectiveScale()
             local function px(value) return math.floor(value * scale + 0.5) end
-            print(("  %s: %d, %d, %d, %d"):format(name, px(region:GetLeft()), px(region:GetRight()),
+            print(("  %s: %d, %d, %d, %d"):format(name, px(left), px(region:GetRight()),
                 px(region:GetTop()), px(region:GetBottom())))
         end
     end

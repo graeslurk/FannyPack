@@ -101,14 +101,29 @@ local GAP = 6 -- between the player frame (or what hangs under it) and the bar
 -- screen pixels, once known.
 local petFrameDepth
 
-local function ScreenTop(region)
-    local top = region and region.GetTop and region:GetTop()
-    return top and top * region:GetEffectiveScale()
+-- Newer clients keep some numbers secret from addons, such as the edges of
+-- the player frame's health bar at times: an addon may pass them on, but
+-- doing maths with them is an error. Here they count as unknown, like a
+-- frame part that isn't placed, and the code falls back to the next part.
+local function Known(value)
+    if value == nil or (issecretvalue and issecretvalue(value)) then return nil end
+    return value
 end
 
-local function ScreenBottom(region)
-    local bottom = region and region.GetBottom and region:GetBottom()
-    return bottom and bottom * region:GetEffectiveScale()
+-- A frame part's edge ("Top", "Bottom", "Left" or "Right") in screen
+-- pixels, or nil if the part is missing, not placed or secret.
+local function ScreenEdge(region, edge)
+    local get = region and region["Get" .. edge]
+    if not get then return nil end
+    local value, scale = Known(get(region)), Known(region:GetEffectiveScale())
+    return value and scale and value * scale
+end
+
+-- A frame part's height in screen pixels, or nil.
+local function ScreenHeight(region)
+    if not region then return nil end
+    local height, scale = Known(region:GetHeight()), Known(region:GetEffectiveScale())
+    return height and scale and height * scale
 end
 
 -- How high an anchor point sits in a frame: 1 at the top, 0 at the bottom.
@@ -122,17 +137,18 @@ end
 -- the game doesn't place it, so then it's worked out from where the pet
 -- frame is attached to the player frame.
 local function PetFrameBottom(frameTop)
-    local bottom = ScreenBottom(PetFrame)
+    local bottom = ScreenEdge(PetFrame, "Bottom")
     if bottom then
         petFrameDepth = frameTop - bottom
     elseif not petFrameDepth and PetFrame then
         local point, relativeTo, relativePoint, _, y = PetFrame:GetPoint(1)
-        local frameBottom = PlayerFrame:GetBottom()
-        if point and relativeTo == PlayerFrame and frameBottom then
-            local anchor = (frameBottom + PlayerFrame:GetHeight() * PointHeight(relativePoint))
-                * PlayerFrame:GetEffectiveScale()
-            local petBottom = anchor + (y - PetFrame:GetHeight() * PointHeight(point)) * PetFrame:GetEffectiveScale()
-            petFrameDepth = frameTop - petBottom
+        point, relativePoint, y = Known(point), Known(relativePoint), Known(y)
+        local frameBottom, frameHeight = ScreenEdge(PlayerFrame, "Bottom"), ScreenHeight(PlayerFrame)
+        local petHeight, petScale = ScreenHeight(PetFrame), Known(PetFrame:GetEffectiveScale())
+        if point and relativePoint and y and relativeTo == PlayerFrame and frameBottom and frameHeight
+            and petHeight and petScale then
+            local anchor = frameBottom + frameHeight * PointHeight(relativePoint)
+            petFrameDepth = frameTop - (anchor + y * petScale - petHeight * PointHeight(point))
         end
     end
     return petFrameDepth and frameTop - petFrameDepth
@@ -157,10 +173,9 @@ end
 local function DefaultOffset()
     local db = ns.db
     local size = db.buttonSize
-    local scale = PlayerFrame:GetEffectiveScale()
-    local frameLeft, frameTop = PlayerFrame:GetLeft(), PlayerFrame:GetTop()
+    local frameLeft, frameTop = ScreenEdge(PlayerFrame, "Left"), ScreenEdge(PlayerFrame, "Top")
     if not (frameLeft and frameTop) then return 40, GAP + size end
-    frameLeft, frameTop = frameLeft * scale, frameTop * scale
+    local scale = Known(PlayerFrame:GetEffectiveScale()) or 1
     local barScale = bar:GetEffectiveScale()
 
     -- Forever's player frame is the newer, retail-style one: its portrait
@@ -172,13 +187,11 @@ local function DefaultOffset()
 
     local x
     if db.direction == "LEFT" then
-        local bars = manaBar or healthBar
-        local right = bars and bars:GetRight()
-        right = right and right * bars:GetEffectiveScale() or PlayerFrame:GetRight() * scale
+        local right = ScreenEdge(manaBar, "Right") or ScreenEdge(healthBar, "Right")
+            or ScreenEdge(PlayerFrame, "Right") or frameLeft + 225 * scale
         x = (right - frameLeft) / barScale - size
     else
-        local left = portrait and portrait:GetLeft()
-        left = left and left * portrait:GetEffectiveScale() or frameLeft
+        local left = ScreenEdge(portrait, "Left") or frameLeft
         x = (left - frameLeft) / barScale
     end
 
@@ -186,10 +199,10 @@ local function DefaultOffset()
     local highest
     local parts = { name, healthBar, manaBar } -- any may be missing
     for i = 1, 3 do
-        local top = ScreenTop(parts[i])
+        local top = ScreenEdge(parts[i], "Top")
         if top and (not highest or top > highest) then highest = top end
     end
-    local portraitTop = ScreenTop(portrait) -- includes its round border
+    local portraitTop = ScreenEdge(portrait, "Top") -- includes its round border
     if portraitTop and (not highest or portraitTop > highest) then highest = portraitTop end
     highest = highest or frameTop
     -- Above works for a bar that grows upwards from its first button, or
@@ -206,19 +219,20 @@ local function DefaultOffset()
     local function Consider(bottom)
         if bottom and (not lowest or bottom < lowest) then lowest = bottom end
     end
-    Consider(ScreenBottom(manaBar))
-    Consider(ScreenBottom(portrait))
-    if PlayerLevelText and PlayerLevelText:GetTop() then
+    Consider(ScreenEdge(manaBar, "Bottom"))
+    Consider(ScreenEdge(portrait, "Bottom"))
+    local levelTop, levelBottom = ScreenEdge(PlayerLevelText, "Top"), ScreenEdge(PlayerLevelText, "Bottom")
+    if levelTop and levelBottom then
         -- The level sits in a round badge that reaches below the text.
-        local middle = (PlayerLevelText:GetTop() + PlayerLevelText:GetBottom()) / 2
-        Consider((middle - 15) * PlayerLevelText:GetEffectiveScale())
+        Consider((levelTop + levelBottom) / 2 - 15 * scale)
     end
     if PET_CLASSES[select(2, UnitClass("player"))] then Consider(PetFrameBottom(frameTop)) end
     lowest = lowest or frameTop - 100 * scale
     local castBar = AttachedCastBar()
-    if castBar then
+    local castBarHeight = castBar and ScreenHeight(castBar)
+    if castBarHeight then
         -- It hangs under all of that, with its spell name below it.
-        lowest = lowest - (castBar:GetHeight() + 14) * castBar:GetEffectiveScale()
+        lowest = lowest - castBarHeight - 14 * scale
     end
     return x, (lowest - frameTop) / barScale - GAP
 end
@@ -261,10 +275,12 @@ local function SavePosition()
     if side == "RIGHT" then x = bar:GetRight() - size end
     if vertical == "BOTTOM" then y = bar:GetBottom() + size end
 
-    local frameLeft = ns.db.attached and PlayerFrame and PlayerFrame:GetLeft()
-    if frameLeft then
-        local ratio = PlayerFrame:GetEffectiveScale() / bar:GetEffectiveScale()
-        ns.db.position = { frame = "player", x = x - frameLeft * ratio, y = y - PlayerFrame:GetTop() * ratio }
+    -- If the player frame's place is secret just now, the bar is saved
+    -- against the screen; the next drag attaches it again.
+    local frameLeft, frameTop = ScreenEdge(PlayerFrame, "Left"), ScreenEdge(PlayerFrame, "Top")
+    if ns.db.attached and frameLeft and frameTop then
+        local barScale = bar:GetEffectiveScale()
+        ns.db.position = { frame = "player", x = x - frameLeft / barScale, y = y - frameTop / barScale }
     else
         ns.db.position = { frame = "screen", x = x, y = y }
     end

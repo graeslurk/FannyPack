@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+Fixed:
+- An error at login ("attempt to perform arithmetic on local 'top'") when the game keeps the player frame's position secret from addons. The bar now skips those numbers and still finds its place
+
 ## 1.0.0
 
 First release:
