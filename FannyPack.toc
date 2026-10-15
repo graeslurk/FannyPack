@@ -1,0 +1,19 @@
+## Interface: 16001
+## Title: Fanny Pack
+## Notes: One small bar for bandages, healthstones, potions, elixirs, food, buff food and drinks, with plain food and Well Fed food on separate buttons. Type /fannypack to open it.
+## Author: Graeslurk
+## Version: @project-version@
+## X-License: All Rights Reserved
+## X-Curse-Project-ID: 1746156
+## Category: Action Bars
+## IconTexture: Interface\AddOns\FannyPack\Media\icon
+## SavedVariables: FannyPackDB
+## SavedVariablesPerCharacter: FannyPackCharDB
+## AddonCompartmentFunc: FannyPack_OnAddonCompartmentClick
+
+Locales/Locales.lua
+
+FannyPack.lua
+UI.lua
+Bar.lua
+Minimap.lua

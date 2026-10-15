@@ -1,0 +1,14 @@
+<Bindings>
+    <Binding name="CLICK FannyPackHealthstoneButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackBandageButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackHealthPotionButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackManaPotionButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackElixirButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackElixir2Button:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackWeaponButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackPoisonButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackPoison2Button:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackFoodButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackDrinkButton:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackBuffFoodButton:LeftButton" category="Fanny Pack"/>
+</Bindings>
