@@ -560,8 +560,8 @@ local function CreateItemButton(kind)
     else
         button:SetAttribute("type1", "item")
     end
-    if kind.key == "bandage" then
-        button:SetAttribute("unit1", "player") -- bandage yourself, even with a friend targeted
+    if kind.self then
+        button:SetAttribute("unit1", "player") -- on you, even with a friend targeted
     end
 
     -- Shape and border are set by ApplyStyle.

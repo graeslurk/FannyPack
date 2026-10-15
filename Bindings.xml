@@ -5,6 +5,7 @@
     <Binding name="CLICK FannyPackManaPotionButton:LeftButton" category="Fanny Pack"/>
     <Binding name="CLICK FannyPackElixirButton:LeftButton" category="Fanny Pack"/>
     <Binding name="CLICK FannyPackElixir2Button:LeftButton" category="Fanny Pack"/>
+    <Binding name="CLICK FannyPackScrollButton:LeftButton" category="Fanny Pack"/>
     <Binding name="CLICK FannyPackWeaponButton:LeftButton" category="Fanny Pack"/>
     <Binding name="CLICK FannyPackPoisonButton:LeftButton" category="Fanny Pack"/>
     <Binding name="CLICK FannyPackPoison2Button:LeftButton" category="Fanny Pack"/>

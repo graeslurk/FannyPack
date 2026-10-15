@@ -23,14 +23,16 @@ local GetItemCount = C_Item.GetItemCount or GetItemCount
 -- the best one the first doesn't use); allowSame: it may use the same one
 -- when there's no other. slot: the item goes on the weapon in that slot
 -- (16 main hand, 17 off-hand), shiftSlot with Shift held. class: only that
--- class gets the button. The order here is the default order on the bar.
+-- class gets the button. self: always used on you, even with a friend
+-- targeted. The order here is the default order on the bar.
 ns.KINDS = {
     { key = "healthstone", name = L["Healthstone"], icon = 5509 }, -- see HEALTHSTONES
-    { key = "bandage", name = L["Bandages"], spell = 746, fallback = "First Aid", icon = 1251 },
+    { key = "bandage", name = L["Bandages"], spell = 746, fallback = "First Aid", icon = 1251, self = true },
     { key = "healthPotion", name = L["Health potion"], spell = 439, fallback = "Healing Potion", icon = 118 },
     { key = "manaPotion", name = L["Mana potion"], spell = 437, fallback = "Restore Mana", icon = 2455 },
     { key = "elixir", name = L["Elixir"], icon = 2454 }, -- elixirs and flasks, see Classify
     { key = "elixir2", name = L["Second elixir"], icon = 5997, list = "elixir" },
+    { key = "scroll", name = L["Scroll"], icon = 1181, self = true }, -- see SCROLLS
     { key = "weapon", name = L["Weapon stone or oil"], icon = 2862, slot = 16, shiftSlot = 17 }, -- see WEAPON_ITEMS
     { key = "poison", name = L["Main-hand poison"], icon = 6947, slot = 16, class = "ROGUE" }, -- see POISONS
     { key = "poison2", name = L["Off-hand poison"], icon = 2892, slot = 17, class = "ROGUE",
@@ -64,6 +66,17 @@ local WEAPON_ITEMS = {
     [3824] = true, [3829] = true, -- Shadow Oil, Frost Oil
 }
 
+-- Scrolls of Agility, Intellect, Protection, Spirit, Stamina and Strength,
+-- ranks I to IV. Newer ones are caught by their names (see Classify).
+local SCROLLS = {
+    [3012] = true, [1477] = true, [4425] = true, [10309] = true, -- Agility
+    [955] = true, [2290] = true, [4419] = true, [10308] = true, -- Intellect
+    [3013] = true, [1478] = true, [4421] = true, [10305] = true, -- Protection
+    [1181] = true, [1712] = true, [4424] = true, [10306] = true, -- Spirit
+    [1180] = true, [1711] = true, [4422] = true, [10307] = true, -- Stamina
+    [954] = true, [2289] = true, [4426] = true, [10310] = true, -- Strength
+}
+
 -- Rogue poisons. Newer ones are caught by their names (see Classify).
 local POISONS = {
     [6947] = true, [6949] = true, [6950] = true, [8926] = true, [8927] = true, [8928] = true, -- Instant I-VI
@@ -80,6 +93,7 @@ function ns.IsAvailable(key)
 end
 
 local CONSUMABLE_SUBCLASS = Enum.ItemConsumableSubclass or {}
+local SCROLL_SUBCLASS = CONSUMABLE_SUBCLASS.Scroll or 4
 local ELIXIR_SUBCLASSES = {
     [CONSUMABLE_SUBCLASS.Elixir or 2] = true,
     [CONSUMABLE_SUBCLASS.Flask or 3] = true,
@@ -223,7 +237,7 @@ local function Classify(itemID)
         return nil
     end
     local listed = (HEALTHSTONES[itemID] and "healthstone") or (WEAPON_ITEMS[itemID] and "weapon")
-        or (POISONS[itemID] and "poison")
+        or (POISONS[itemID] and "poison") or (SCROLLS[itemID] and "scroll")
     if listed then
         itemKinds[itemID] = listed
         return listed
@@ -248,6 +262,8 @@ local function Classify(itemID)
             key = "healthstone"
         elseif ELIXIR_SUBCLASSES[subClassID] or name:find(L["elixir"], 1, true) or name:find(L["flask"], 1, true) then
             key = "elixir"
+        elseif subClassID == SCROLL_SUBCLASS or name:find(L["scroll of"], 1, true) then
+            key = "scroll"
         elseif name:find(L["sharpening stone"], 1, true) or name:find(L["weightstone"], 1, true)
             or name:find(L["wizard oil"], 1, true) or name:find(L["mana oil"], 1, true) then
             key = "weapon"

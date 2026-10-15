@@ -1,8 +1,8 @@
 # Fanny Pack
 
 One small bar on your hip for everything you reach for between and during
-fights: bandages, healthstones, potions, elixirs, weapon stones and oils,
-food, drinks and buff food. Plain food and Well Fed food get separate
+fights: bandages, healthstones, potions, elixirs, scrolls, weapon stones and
+oils, food, drinks and buff food. Plain food and Well Fed food get separate
 buttons, so you never waste a feast just to heal up. Made for **WoW Forever**.
 
 ## Why Fanny Pack
@@ -26,6 +26,8 @@ buttons, so you never waste a feast just to heal up. Made for **WoW Forever**.
 - **Health potion** and **Mana potion**
 - **Elixir** and **Second elixir**: elixirs and flasks. The second one takes
   the best elixir the first doesn't use
+- **Scroll**: Scrolls of Agility, Intellect, Protection, Spirit, Stamina and
+  Strength, always used on you
 - **Weapon stone or oil**: sharpening stones, weightstones, wizard oils and
   mana oils. Click to put one on your main hand weapon, Shift-click for your
   off-hand. It glows softly while a weapon in your hands has nothing on it

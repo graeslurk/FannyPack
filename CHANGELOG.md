@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+New:
+- A **Scroll** button for Scrolls of Agility, Intellect, Protection, Spirit, Stamina and Strength. Like bandages, it always uses the scroll on you, even with a friend targeted. Right-click it to pick which scroll. It's added at the end of your bar; move it with the arrows in the options
+
 ## 1.0.1
 
 Fixed:
