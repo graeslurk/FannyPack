@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Fanny Pack
-## Notes: One small bar for bandages, healthstones, potions, elixirs, food, buff food and drinks, with plain food and Well Fed food on separate buttons. Type /fannypack to open it.
+## Notes: Bandages, potions, elixirs, scrolls, weapon stones and food on one small bar, with glowing reminders when a buff is missing or running out. Type /fannypack to open it.
 ## Author: Graeslurk
 ## Version: @project-version@
 ## X-License: All Rights Reserved

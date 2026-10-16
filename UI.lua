@@ -168,6 +168,26 @@ local function CreateToggle(parent, get, set)
 end
 ns.CreateToggle = CreateToggle -- also in the bar's right-click list
 
+-- Scrolling a page with the mouse wheel shouldn't get caught by a slider
+-- the pointer happens to pass over: wheel turns on a slider within this
+-- long of scrolling the page keep scrolling the page. Stop for a moment,
+-- and the wheel moves the slider.
+local WHEEL_HANDOFF = 0.5 -- seconds
+local lastPageScroll, scrolledPage = 0, nil
+
+local function PageScrolled(page)
+    lastPageScroll, scrolledPage = GetTime(), page
+end
+
+-- True (after passing the turn on) if the page was just being scrolled.
+local function HandWheelToPage(delta)
+    if scrolledPage and scrolledPage:IsVisible() and GetTime() - lastPageScroll < WHEEL_HANDOFF then
+        scrolledPage:GetScript("OnMouseWheel")(scrolledPage, delta)
+        return true
+    end
+    return false
+end
+
 -- Thin track with a coloured fill, a round knob and the value on the right.
 local function CreateSlider(parent, minValue, maxValue, get, onChange, width)
     local holder = CreateFrame("Frame", nil, parent)
@@ -211,6 +231,7 @@ local function CreateSlider(parent, minValue, maxValue, get, onChange, width)
     end)
     slider:EnableMouseWheel(true)
     slider:SetScript("OnMouseWheel", function(self, delta)
+        if HandWheelToPage(delta) then return end
         self:SetValue(self:GetValue() + delta)
     end)
     slider:SetValue(get())
@@ -1100,6 +1121,7 @@ local function CreateScrollArea(parent)
 
     area:EnableMouseWheel(true)
     area:SetScript("OnMouseWheel", function(self, delta)
+        PageScrolled(self)
         scrollTo(self:GetVerticalScroll() - delta * 48)
     end)
     area:SetScript("OnScrollRangeChanged", function(self)

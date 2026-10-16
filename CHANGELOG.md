@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1
+
+Fixed:
+- Scrolling the options with the mouse wheel no longer gets caught by a slider the pointer passes over. To change a slider with the wheel, stop for a moment over it first
+
+Changed:
+- The description in the game's AddOns list now mentions scrolls and the reminders
+
 ## 1.2.0
 
 New buttons:
