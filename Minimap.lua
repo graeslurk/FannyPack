@@ -56,8 +56,8 @@ local function FollowCursor()
     local mx, my = Minimap:GetCenter()
     local scale = Minimap:GetEffectiveScale()
     local cx, cy = GetCursorPosition()
-    ns.db.minimapAngle = math.deg(math.atan2(cy / scale - my, cx / scale - mx)) % 360
-    SetAngle(ns.db.minimapAngle)
+    ns.account.minimapAngle = math.deg(math.atan2(cy / scale - my, cx / scale - mx)) % 360
+    SetAngle(ns.account.minimapAngle)
 end
 
 local function ShowTooltip(self)
@@ -65,7 +65,8 @@ local function ShowTooltip(self)
     GameTooltip:SetText("Fanny Pack", 1, 1, 1)
     for _, kind in ipairs(ns.KINDS) do
         -- Shared lists (second elixir, off-hand poison) would repeat the first.
-        if ns.IsAvailable(kind.key) and ns.charDB.buttons[kind.key] and not kind.list then
+        local onBar = ns.db.buttons[kind.key] or ns.ShowsInCombat(kind.key)
+        if ns.IsAvailable(kind.key) and onBar and not kind.list and not kind.combo then
             local count = ns.CountKind(kind.key)
             if count > 0 then
                 GameTooltip:AddDoubleLine(kind.name, count, 1, 0.82, 0, 1, 1, 1)
@@ -120,7 +121,7 @@ local function CreateButton()
     button:SetScript("OnEnter", ShowTooltip)
     button:SetScript("OnLeave", GameTooltip_Hide)
 
-    SetAngle(ns.db.minimapAngle)
+    SetAngle(ns.account.minimapAngle)
 end
 
 -- Updates the tooltip if it's showing.
@@ -129,7 +130,7 @@ function ns.RefreshMinimapButton()
 end
 
 function ns.SetMinimapButton(show)
-    ns.db.minimapButton = show and true or false
+    ns.account.minimapButton = show and true or false
     if show and not button then CreateButton() end
     if button then button:SetShown(show) end
     ns.RefreshMinimapButton()
@@ -138,5 +139,5 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:SetScript("OnEvent", function()
-    if ns.db.minimapButton then CreateButton() end
+    if ns.account.minimapButton then CreateButton() end
 end)

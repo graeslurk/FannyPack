@@ -15,6 +15,7 @@ local C = ns.C
 
 local GetItemCount = C_Item.GetItemCount or GetItemCount
 local GetItemCooldown = C_Container.GetItemCooldown or GetItemCooldown
+local GetItemSpell = C_Item.GetItemSpell or GetItemSpell
 local RECENTLY_BANDAGED = 11196 -- the debuff that stops you bandaging again for a minute
 local WELL_FED = 19705 -- one of the many Well Fed buffs; they all share the name
 local EATING = 433 -- the "Food" buff you have while eating
@@ -28,7 +29,15 @@ local BORDERS = {
     silver = { color = { 0.66, 0.67, 0.71, 1 }, pixels = 1 },
     gold = { color = { 0.94, 0.69, 0.24, 1 }, pixels = 1 },
 }
-local GLOW_COLOR = { 0.94, 0.69, 0.24 } -- the gold of the logo's ring
+-- Reminder glows: gold when the buff (or the stone on the weapon) is
+-- missing, a calmer silver when it's about to run out (the last few
+-- minutes, as set on the Reminders page). They're painted over the ground
+-- rather than added to it, so they look the same on dark and light ground;
+-- strength scales how strongly each shows.
+local GLOW_MISSING = { 0.94, 0.69, 0.24, strength = 1 } -- the gold of the logo's ring
+local GLOW_EXPIRING = { 0.82, 0.86, 0.94, strength = 0.33 }
+
+local LOW_STOCK_COLOR = { 1, 0.3, 0.3 }
 
 local NUMBER_FONT = NumberFontNormal and NumberFontNormal:GetFont() or STANDARD_TEXT_FONT
 local countdownFont = CreateFont("FannyPackCountdownFont") -- cooldown numbers, sized in ApplyStyle
@@ -44,8 +53,8 @@ local inCombat = false -- from the combat events, which come just before the loc
 local stateDriver = false -- the combat snippet is hooked up
 
 -- Places the shown buttons one after another from the bar's first-button
--- corner, in order, wrapping to a new row after fp-perrow buttons and
--- skipping food and drink in combat. Runs in the game's secure environment,
+-- corner, in order, wrapping to a new row after fp-perrow buttons. Each
+-- button shows in combat (fp-incombat), out of it (fp-outofcombat) or both. Runs in the game's secure environment,
 -- so it works in combat too. The bar keeps the size of its out-of-combat
 -- buttons; the first button stays put and the rest close in on it.
 local LAYOUT = [[
@@ -58,7 +67,8 @@ local LAYOUT = [[
     local n = 0
     for i = 1, self:GetAttribute("fp-count") do
         local button = self:GetFrameRef("button" .. i)
-        if button:GetAttribute("fp-enabled") and not (inCombat and button:GetAttribute("fp-eating")) then
+        local shown = button:GetAttribute(inCombat and "fp-incombat" or "fp-outofcombat")
+        if button:GetAttribute("fp-enabled") and shown then
             local column = n % perRow
             local along, across = column * step, (n - column) / perRow * step
             local x, y = across, along
@@ -361,12 +371,34 @@ local function UpdateCooldown(button)
     end
 end
 
-local function HasBuff(spellID, englishName)
-    local name = ns.SpellName(spellID) or englishName
+-- Seconds left on a buff you have (math.huge if it doesn't run out), or
+-- nil if you don't have it.
+local function AuraTimeLeft(name)
+    local expiration
     if C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
-        return C_UnitAuras.GetAuraDataBySpellName("player", name, "HELPFUL") ~= nil
+        local aura = C_UnitAuras.GetAuraDataBySpellName("player", name, "HELPFUL")
+        if not aura then return nil end
+        expiration = aura.expirationTime
+    elseif AuraUtil and AuraUtil.FindAuraByName then
+        local found, _, _, _, _, auraExpiration = AuraUtil.FindAuraByName(name, "player", "HELPFUL")
+        if not found then return nil end
+        expiration = auraExpiration
+    else
+        return nil
     end
-    return AuraUtil and AuraUtil.FindAuraByName and AuraUtil.FindAuraByName(name, "player", "HELPFUL") ~= nil
+    if not expiration or expiration == 0 then return math.huge end
+    return expiration - GetTime()
+end
+
+local function BuffTimeLeft(spellID, englishName)
+    return AuraTimeLeft(ns.SpellName(spellID) or englishName)
+end
+
+-- Gold while a buff is missing, silver in its last few minutes, as set on
+-- the Reminders page for that kind of buff (see ns.RUNNING_OUT).
+local function GlowFor(timeLeft, minutes)
+    if not timeLeft then return GLOW_MISSING end
+    return timeLeft <= minutes * 60 and GLOW_EXPIRING or nil
 end
 
 local WEAPON = Enum.ItemClass and Enum.ItemClass.Weapon or 2
@@ -376,39 +408,78 @@ local function HoldsWeapon(slot)
     return itemID ~= nil and select(6, C_Item.GetItemInfoInstant(itemID)) == WEAPON
 end
 
--- True while the weapon in the slot (16 main hand, 17 off-hand) has no
--- stone, oil, poison or other temporary enchant on it. A shield or
--- held-in-off-hand item isn't a weapon.
-local function WeaponNeedsSomething(slot)
-    if not HoldsWeapon(slot) then return false end
-    local hasMainHand, _, _, _, hasOffHand = GetWeaponEnchantInfo()
-    if slot == 16 then return not hasMainHand end
-    return not hasOffHand
+-- The glow for the weapon in the slot (16 main hand, 17 off-hand): gold
+-- while it has no stone, oil, poison or other temporary enchant on it,
+-- silver when that enchant is running out. A shield or held-in-off-hand
+-- item isn't a weapon, so it gets none.
+local function WeaponGlow(slot)
+    if not HoldsWeapon(slot) then return nil end
+    local hasMainHand, mainHandLeft, _, _, hasOffHand, offHandLeft = GetWeaponEnchantInfo()
+    if slot == 16 then
+        return GlowFor(hasMainHand and (mainHandLeft or 0) / 1000 or nil, ns.db.weaponMinutes)
+    end
+    return GlowFor(hasOffHand and (offHandLeft or 0) / 1000 or nil, ns.db.weaponMinutes)
 end
 
--- Reminders: a soft, slowly pulsing glow on buff food while you aren't Well
--- Fed (or eating already), and on weapon stones and oils while a weapon has
--- none on it. Only out of combat, and only when you carry some.
+-- Reminders: a soft, slowly pulsing glow, gold while something is missing
+-- and silver when it's running out: Well Fed on buff food (not while
+-- you're eating), the item's buff on elixirs and scrolls, and stones, oils
+-- and poisons on weapons. Only out of combat, and only when you carry some.
+-- Returns the glow's colour, or nil.
 local function WantsGlow(button, empty)
-    if empty or inCombat or InCombatLockdown() then return false end
+    if empty or inCombat or InCombatLockdown() then return nil end
     local key = button.kind.key
     if key == "buffFood" then
-        return ns.db.buffFoodGlow and not HasBuff(WELL_FED, "Well Fed") and not HasBuff(EATING, "Food")
+        if not ns.db.buffFoodGlow or BuffTimeLeft(EATING, "Food") then return nil end
+        return GlowFor(BuffTimeLeft(WELL_FED, "Well Fed"), ns.db.wellFedMinutes)
     elseif key == "weapon" then
-        return ns.db.weaponGlow and (WeaponNeedsSomething(16) or WeaponNeedsSomething(17))
+        -- Both hands: the more urgent of the two.
+        if not ns.db.weaponGlow then return nil end
+        local main, off = WeaponGlow(16), WeaponGlow(17)
+        if main == GLOW_MISSING or off == GLOW_MISSING then return GLOW_MISSING end
+        return main or off
     elseif button.kind.slot then -- poisons: their own hand
-        return ns.db.weaponGlow and WeaponNeedsSomething(button.kind.slot)
+        return ns.db.weaponGlow and WeaponGlow(button.kind.slot) or nil
+    elseif button.kind.buff then
+        -- The buff is named like the item's use effect, e.g. "Elixir of the
+        -- Mongoose" or "Stamina" for a Scroll of Stamina.
+        local on = ns.db.elixirGlow
+        if key == "scroll" then on = ns.db.scrollGlow end
+        if not on or not button.itemID then return nil end
+        local spell = GetItemSpell(button.itemID)
+        local minutes = key == "scroll" and ns.db.scrollMinutes or ns.db.elixirMinutes
+        return spell and GlowFor(AuraTimeLeft(spell), minutes) or nil
     end
-    return false
+    return nil
 end
 
+-- All glows pulse together, from one clock: a slow, eased fade between
+-- PULSE_LOW and PULSE_HIGH. Runs only while some button glows.
+local PULSE_PERIOD = 3.2 -- seconds for a fade in and out
+local PULSE_LOW, PULSE_HIGH = 0.3, 0.85
+local pulse = CreateFrame("Frame")
+pulse:Hide()
+pulse:SetScript("OnUpdate", function(self)
+    local phase = (GetTime() % PULSE_PERIOD) / PULSE_PERIOD
+    local alpha = PULSE_LOW + (PULSE_HIGH - PULSE_LOW) * (0.5 - 0.5 * math.cos(phase * 2 * math.pi))
+    local glowing = false
+    for _, button in pairs(buttons) do
+        if button.glow:IsShown() then
+            button.glow:SetAlpha(alpha * button.glowStrength)
+            glowing = true
+        end
+    end
+    if not glowing then self:Hide() end
+end)
+
 local function UpdateGlow(button, empty)
-    local show = WantsGlow(button, empty)
-    if show and not button.glow:IsShown() then
+    local color = WantsGlow(button, empty)
+    if color then
+        button.glow:SetVertexColor(color[1], color[2], color[3])
+        button.glowStrength = color.strength
         button.glow:Show()
-        button.pulse:Play()
-    elseif not show and button.glow:IsShown() then
-        button.pulse:Stop()
+        pulse:Show()
+    else
         button.glow:Hide()
     end
 end
@@ -501,7 +572,24 @@ end
 local function UpdateLook(button)
     local itemID = button.itemID
     local count = itemID and GetItemCount(itemID) or 0
+    local subIconID
+    if button.partIDs then
+        -- Eat & drink: the count of whichever runs out first, and the second
+        -- item's icon in the corner.
+        count = nil
+        for i, partID in ipairs(button.partIDs) do
+            local partCount = GetItemCount(partID)
+            if partCount > 0 then count = count and math.min(count, partCount) or partCount end
+            if i == 2 then subIconID = partID end
+        end
+        count = count or 0
+    end
     local empty = count == 0
+    button.subIcon:SetShown(subIconID ~= nil and not empty)
+    if subIconID then
+        button.subIcon:SetTexture(select(5, C_Item.GetItemInfoInstant(subIconID)))
+        button.subIcon:SetSize(ns.db.buttonSize * 0.45, ns.db.buttonSize * 0.45)
+    end
 
     UpdateCooldown(button)
     local coolingDown = button.coolingDown
@@ -519,6 +607,12 @@ local function UpdateLook(button)
 
     -- During a cooldown its countdown is the only text, so it stays readable.
     button.count:SetText(empty and "" or (count > 999 and "*" or count))
+    local lowStock = ns.LowStock(button.kind.key)
+    if ns.db.lowStockWarning and not empty and count <= lowStock then
+        button.count:SetTextColor(unpack(LOW_STOCK_COLOR)) -- down to your last few
+    else
+        button.count:SetTextColor(1, 1, 1)
+    end
     button.count:SetShown(not coolingDown)
     button.hotkey:SetShown(not coolingDown)
     UpdateGlow(button, empty)
@@ -527,13 +621,29 @@ end
 
 local function ShowButtonTooltip(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    if self.itemID and GetItemCount(self.itemID) > 0 then
+    if self.kind.combo then
+        GameTooltip:SetText(self.kind.name, 1, 1, 1)
+        for _, partID in ipairs(self.partIDs or {}) do
+            local name = C_Item.GetItemInfo(partID)
+            if name then GameTooltip:AddDoubleLine(name, GetItemCount(partID), 1, 0.82, 0, 1, 1, 1) end
+        end
+        if not (self.partIDs and #self.partIDs > 0) then
+            GameTooltip:AddLine(L["None in your bags."], C.muted[1], C.muted[2], C.muted[3])
+        end
+        GameTooltip:AddLine(L["Eats and drinks in one click, with the items of your Food and Drink buttons."],
+            0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+        return
+    elseif self.itemID and GetItemCount(self.itemID) > 0 then
         GameTooltip:SetItemByID(self.itemID)
     else
         GameTooltip:SetText(self.kind.name, 1, 1, 1)
         GameTooltip:AddLine(L["None in your bags."], C.muted[1], C.muted[2], C.muted[3])
     end
-    if self.kind.shiftSlot then
+    if self.kind.self then
+        GameTooltip:AddLine(ns.db.useOnTarget and L["Goes on your friendly target, or on you."]
+            or L["Always goes on you."], 0.6, 0.6, 0.6, true)
+    elseif self.kind.shiftSlot then
         GameTooltip:AddLine(L["Click to put it on your main hand weapon, Shift-click for your off-hand."],
             0.6, 0.6, 0.6, true)
     elseif self.kind.slot == 16 then
@@ -553,16 +663,7 @@ local function CreateItemButton(kind)
     -- Left-click uses the item. Right-click has no secure action, only
     -- the item list (PostClick). Which half of a click counts is set in
     -- SecureUpdate.
-    if kind.slot then
-        -- Stones, oils and poisons need a weapon to go on: use the item,
-        -- then pick the weapon's slot (see SecureUpdate).
-        button:SetAttribute("type1", "macro")
-    else
-        button:SetAttribute("type1", "item")
-    end
-    if kind.self then
-        button:SetAttribute("unit1", "player") -- on you, even with a friend targeted
-    end
+    -- What a click does is set in SecureUpdate.
 
     -- Shape and border are set by ApplyStyle.
     button.border = button:CreateTexture(nil, "BACKGROUND")
@@ -577,16 +678,8 @@ local function CreateItemButton(kind)
     -- behind the border, so only the part outside the button shows.
     button.glow = button:CreateTexture(nil, "BACKGROUND", nil, -1)
     button.glow:SetPoint("CENTER")
-    button.glow:SetBlendMode("ADD")
-    button.glow:SetVertexColor(unpack(GLOW_COLOR))
+    button.glow:SetBlendMode("BLEND")
     button.glow:Hide()
-    button.pulse = button.glow:CreateAnimationGroup()
-    button.pulse:SetLooping("BOUNCE")
-    local fade = button.pulse:CreateAnimation("Alpha")
-    fade:SetFromAlpha(0.3)
-    fade:SetToAlpha(0.85)
-    fade:SetDuration(1.6)
-    fade:SetSmoothing("IN_OUT")
 
     button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     button:GetHighlightTexture():SetAllPoints(button.icon)
@@ -603,6 +696,12 @@ local function CreateItemButton(kind)
     local overlay = CreateFrame("Frame", nil, button)
     overlay:SetAllPoints()
     overlay:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
+    -- Eat & drink: the drink's icon small in the food's corner.
+    button.subIcon = overlay:CreateTexture(nil, "ARTWORK")
+    button.subIcon:SetPoint("BOTTOMLEFT", button.icon, "BOTTOMLEFT", 1, 1)
+    button.subIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    button.subIcon:Hide()
+
     button.count = overlay:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetPoint("BOTTOMRIGHT", -2, 2)
     button.hotkey = overlay:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
@@ -613,7 +712,8 @@ local function CreateItemButton(kind)
     button:SetScript("PostClick", function(self, mouseButton)
         if mouseButton == "RightButton" then ns.TogglePicker(self) end
     end)
-    button:SetAttribute("fp-eating", false)
+    button:SetAttribute("fp-incombat", false)
+    button:SetAttribute("fp-outofcombat", false)
     button:SetAttribute("fp-enabled", false)
     button:SetScript("OnEnter", ShowButtonTooltip)
     button:SetScript("OnLeave", GameTooltip_Hide)
@@ -640,7 +740,7 @@ local function SecureUpdate()
     local db = ns.db
     local size, spacing = db.buttonSize, db.spacing
     local clickHalf = ClickHalf()
-    local shown = 0
+    local shownOut, shownIn = 0, 0 -- buttons shown out of and in combat
     for i, key in ipairs(ns.Order()) do
         local button = buttons[key]
         local entry = ns.ItemFor(key)
@@ -648,25 +748,56 @@ local function SecureUpdate()
         button.usable = not entry or entry.usable
         local kind = button.kind
         if kind.slot then
+            -- Stones, oils and poisons need a weapon to go on: use the
+            -- item, then pick the weapon's slot.
             local use = entry and "/use item:" .. entry.itemID .. "\n/use "
+            button:SetAttribute("type1", "macro")
             button:SetAttribute("macrotext1", use and use .. kind.slot or nil)
             if kind.shiftSlot then
                 button:SetAttribute("shift-macrotext1", use and use .. kind.shiftSlot or nil)
             end
+        elseif kind.combo then
+            -- Eat & drink: the Food and Drink buttons' items in one press.
+            button.partIDs = {}
+            local lines = {}
+            for _, part in ipairs(kind.combo) do
+                local partEntry = ns.ItemFor(part)
+                if partEntry then
+                    button.partIDs[#button.partIDs + 1] = partEntry.itemID
+                    lines[#lines + 1] = "/use item:" .. partEntry.itemID
+                end
+            end
+            button:SetAttribute("type1", "macro")
+            button:SetAttribute("macrotext1", #lines > 0 and table.concat(lines, "\n") or nil)
+        elseif kind.self and db.useOnTarget then
+            -- Bandages and scrolls on a friendly, living target, otherwise
+            -- on you. The game decides at the click, so it works in combat.
+            button:SetAttribute("type1", "macro")
+            button:SetAttribute("macrotext1",
+                entry and ("/use [@target,help,nodead][@player] item:" .. entry.itemID) or nil)
         else
+            button:SetAttribute("type1", "item")
+            button:SetAttribute("unit1", kind.self and "player" or nil) -- on you, even with a friend targeted
             button:SetAttribute("item1", entry and ("item:" .. entry.itemID) or nil)
         end
         button:RegisterForClicks(clickHalf)
         button:SetSize(size, size)
 
-        local show = ns.IsAvailable(key) and ns.charDB.buttons[key] and (entry ~= nil or not db.hideEmpty) or false
+        -- Out of combat, in combat, or both (see LAYOUT).
+        local outOfCombat, inCombatToo = db.buttons[key], ns.ShowsInCombat(key)
+        local show = ns.IsAvailable(key) and (outOfCombat or inCombatToo) and (entry ~= nil or not db.hideEmpty) or false
         button:SetAttribute("fp-enabled", show)
-        button:SetAttribute("fp-eating", button.kind.eating and db.hideEatingInCombat or false)
+        button:SetAttribute("fp-outofcombat", outOfCombat and true or false)
+        button:SetAttribute("fp-incombat", inCombatToo and true or false)
         bar:SetFrameRef("button" .. i, button)
-        if show then shown = shown + 1 end
+        if show and outOfCombat then shownOut = shownOut + 1 end
+        if show and inCombatToo then shownIn = shownIn + 1 end
     end
 
-    -- Rows of perRow buttons; the last one may be shorter.
+    -- Rows of perRow buttons; the last one may be shorter. Sized for
+    -- whichever is more, in or out of combat, so dragging and the fade's
+    -- hover cover every button.
+    local shown = math.max(shownOut, shownIn)
     local perRow = math.max(1, db.perRow)
     local columns = math.max(1, math.min(shown, perRow))
     local rows = math.max(1, math.ceil(shown / perRow))
@@ -702,7 +833,7 @@ local fader = CreateFrame("Frame")
 fader:Hide()
 
 local function FadeTarget()
-    if InCombatLockdown() or not ns.db.locked then return 1 end
+    if InCombatLockdown() or not ns.account.locked then return 1 end
     if bar:IsMouseOver(8, -8, -8, 8) then return 1 end
     if (picker and picker:IsShown()) or (FannyPackFrame and FannyPackFrame:IsShown()) then return 1 end
     return 0
@@ -793,10 +924,10 @@ end
 
 -- Returns true if the change was made.
 function ns.SetLocked(locked)
-    ns.db.locked = locked and true or false
+    ns.account.locked = locked and true or false
     if mover then
-        if ns.db.locked then ns.StopMoving() end
-        mover:SetShown(not ns.db.locked)
+        if ns.account.locked then ns.StopMoving() end
+        mover:SetShown(not ns.account.locked)
     end
     if ns.RefreshWindow then ns.RefreshWindow() end
     return true
@@ -858,6 +989,26 @@ local function GetRow(i)
     return row
 end
 
+local FOOTER_HEIGHT = 32
+local PREFER_HEIGHT = 32
+
+-- A small - or + button for the low-stock limit.
+local function StepButton(parent, label, delta)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(20, 20)
+    local bg = ns.Rounded(button, "BACKGROUND", C.control)
+    local text = ns.Text(button, 14, C.text)
+    text:SetPoint("CENTER", 0, 1)
+    text:SetText(label)
+    button:SetScript("OnEnter", function() ns.SetColor(bg, C.controlHover) end)
+    button:SetScript("OnLeave", function() ns.SetColor(bg, C.control) end)
+    button:SetScript("OnClick", function()
+        local key = picker.owner.kind.key
+        ns.SetLowStock(key, ns.LowStock(key) + delta)
+    end)
+    return button
+end
+
 local function CreatePicker()
     picker = CreateFrame("Frame", "FannyPackPicker", UIParent)
     picker:SetFrameStrata("DIALOG")
@@ -870,6 +1021,50 @@ local function CreatePicker()
     picker.title:SetPoint("TOPLEFT", 14, -10)
     picker.rows = {}
     picker:Hide()
+
+    -- Under the list: when the button's count turns red.
+    local footer = CreateFrame("Frame", nil, picker)
+    footer:SetHeight(FOOTER_HEIGHT)
+    footer:SetPoint("BOTTOMLEFT", 4, 4)
+    footer:SetPoint("BOTTOMRIGHT", -4, 4)
+    local line = footer:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 1, 1, 0.06)
+    line:SetHeight(1)
+    line:SetPoint("TOPLEFT", 8, 0)
+    line:SetPoint("TOPRIGHT", -8, 0)
+    footer.label = ns.Text(footer, 12, C.muted)
+    footer.label:SetPoint("LEFT", 10, -1)
+    footer.label:SetText(L["Warn when down to"])
+    footer.plus = StepButton(footer, "+", 1)
+    footer.plus:SetPoint("RIGHT", -6, -1)
+    footer.value = ns.Text(footer, 13, C.text)
+    footer.value:SetWidth(30)
+    footer.value:SetJustifyH("CENTER")
+    footer.value:SetPoint("RIGHT", footer.plus, "LEFT", -2, 0)
+    footer.minus = StepButton(footer, "-", -1)
+    footer.minus:SetPoint("RIGHT", footer.value, "LEFT", -2, 0)
+    picker.footer = footer
+
+    -- Above that: which item the automatic pick prefers.
+    local prefer = CreateFrame("Frame", nil, picker)
+    prefer:SetHeight(PREFER_HEIGHT)
+    prefer:SetPoint("BOTTOMLEFT", footer, "TOPLEFT")
+    prefer:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT")
+    local preferLine = prefer:CreateTexture(nil, "ARTWORK")
+    preferLine:SetColorTexture(1, 1, 1, 0.06)
+    preferLine:SetHeight(1)
+    preferLine:SetPoint("TOPLEFT", 8, 0)
+    preferLine:SetPoint("TOPRIGHT", -8, 0)
+    local preferLabel = ns.Text(prefer, 12, C.muted)
+    preferLabel:SetPoint("LEFT", 10, -1)
+    preferLabel:SetText(L["Use up low-level ones first"])
+    prefer.toggle = ns.CreateToggle(prefer, function()
+        return picker.owner and ns.db.preferLow[picker.owner.kind.key] or false
+    end, function(value)
+        ns.SetPreferLow(picker.owner.kind.key, value)
+    end)
+    prefer.toggle:SetPoint("RIGHT", -6, -1)
+    picker.prefer = prefer
 
     tinsert(UISpecialFrames, "FannyPackPicker") -- Escape closes it
 
@@ -917,7 +1112,9 @@ function ns.RefreshPicker()
         width = math.max(width, rowWidth + 8)
     end
 
-    if #list == 0 then
+    if kind.combo then
+        Add(nil, nil, "|cff8a8b93" .. L["Uses your Food and Drink buttons' items."] .. "|r", "", false, false)
+    elseif #list == 0 then
         Add(nil, nil, "|cff8a8b93" .. L["None in your bags."] .. "|r", "", false, false)
     else
         Add(nil, list[1].icon, L["Best available"], "", true, not usingChoice)
@@ -935,7 +1132,17 @@ function ns.RefreshPicker()
     end
     for i = count + 1, #picker.rows do picker.rows[i]:Hide() end
 
-    picker:SetSize(math.max(200, width), 30 + count * ROW_HEIGHT + 6)
+    local lowStock = ns.LowStock(kind.key)
+    picker.footer.value:SetText(lowStock > 0 and lowStock or L["off"])
+    picker.footer.minus:SetEnabled(lowStock > 0)
+    picker.footer.minus:SetAlpha(lowStock > 0 and 1 or 0.4)
+
+    -- Eat & drink picks nothing itself: its items come from Food and Drink.
+    picker.prefer:SetShown(not kind.combo)
+    picker.prefer.toggle:Update(true)
+    local preferHeight = kind.combo and 0 or PREFER_HEIGHT
+
+    picker:SetSize(math.max(260, width), 30 + count * ROW_HEIGHT + 6 + preferHeight + FOOTER_HEIGHT)
     picker:ClearAllPoints()
     if ns.db.direction == "UP" or ns.db.direction == "DOWN" then
         picker:SetPoint("TOPLEFT", picker.owner, "TOPRIGHT", 8, 4) -- beside a vertical bar
@@ -974,7 +1181,7 @@ function ns.CreateBar()
         buttons[kind.key] = CreateItemButton(kind)
     end
     CreateMover()
-    mover:SetShown(not ns.db.locked)
+    mover:SetShown(not ns.account.locked)
 
     -- After Edit Mode the player frame may be somewhere else, with more or
     -- less room above it.
@@ -994,14 +1201,19 @@ events:RegisterUnitEvent("UNIT_PET", "player")
 events:RegisterUnitEvent("UNIT_AURA", "player")
 events:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player") -- weapons swapped, stones and oils on or off
 pcall(events.RegisterEvent, events, "WEAPON_ENCHANT_CHANGED")
--- A stone or oil wearing off doesn't always send an event, so look now and then.
+-- A stone or oil wearing off doesn't always send an event, and Well Fed
+-- running low sends none, so look now and then.
 C_Timer.NewTicker(10, function()
-    if bar and buttons.weapon then UpdateLook(buttons.weapon) end
+    if not bar then return end
+    for _, button in pairs(buttons) do UpdateLook(button) end
 end)
 
 events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_REGEN_ENABLED" then
         inCombat = false
+        if picker and picker:IsShown() and not ns.db.buttons[picker.owner.kind.key] then
+            picker:Hide() -- its button only shows in combat
+        end
         if createAfterCombat then
             createAfterCombat = false
             ns.CreateBar()
@@ -1026,7 +1238,7 @@ events:SetScript("OnEvent", function(_, event)
             for _, button in pairs(buttons) do UpdateLook(button) end -- no reminders in a fight
         end
         if bar then ns.StopMoving() end -- in case combat starts mid-drag
-        if picker and picker:IsShown() and picker.owner.kind.eating and ns.db.hideEatingInCombat then
+        if picker and picker:IsShown() and not ns.ShowsInCombat(picker.owner.kind.key) then
             picker:Hide() -- its button is about to disappear
         end
     elseif bar then

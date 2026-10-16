@@ -1,6 +1,6 @@
 -- Fanny Pack options window: a dark, card-based window in the style of
--- Pocket Goblin, with the bar's settings and which buttons to show. The
--- colours and drawing helpers are shared with Bar.lua through ns.
+-- Pocket Goblin, with a sidebar of pages. The colours and drawing helpers
+-- are shared with Bar.lua through ns.
 
 local ADDON_NAME, ns = ...
 local L = ns.L
@@ -8,16 +8,16 @@ local L = ns.L
 local MEDIA = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Media\\"
 local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
 
--- The window lays its cards out in two columns when it's wide enough (the
--- bar and its look on the left, the buttons on the right), otherwise in
--- one. It can be resized, and scrolls when it's shorter than its cards.
-local BAR_CARD_WIDTH = 500 -- natural widths, for the default size
-local BUTTONS_CARD_WIDTH = 340
+-- A sidebar of pages, like Pocket Goblin's. Each page is a column of cards
+-- that fits the window's width and scrolls when the window is shorter. The
+-- window can be resized.
+local SIDEBAR_WIDTH = 200
+local CARD_WIDTH = 500 -- natural width, for the default size
 local SCROLLBAR = 14 -- room on the right for the scroll bar
-local WIDTH = 20 + BAR_CARD_WIDTH + 16 + BUTTONS_CARD_WIDTH + 20 + SCROLLBAR
-local TWO_COLUMNS = 20 + 420 + 16 + 320 + 20 -- the narrowest content that fits two columns
-local MIN_WIDTH = 20 + 420 + 20 + SCROLLBAR -- one column
-local MIN_HEIGHT = 320
+local WIDTH = SIDEBAR_WIDTH + 20 + CARD_WIDTH + 20 + SCROLLBAR
+local MIN_WIDTH = SIDEBAR_WIDTH + 20 + 400 + 20 + SCROLLBAR
+local MIN_HEIGHT = 360
+local NAV_HEIGHT, NAV_SPACING = 44, 4
 local SCREEN_MARGIN = 40
 local HEADER_HEIGHT = 72
 
@@ -31,11 +31,15 @@ local C = {
     controlBorder = { 0.24, 0.245, 0.265, 1 },
     accent = { 0.37, 0.71, 0.56, 1 }, -- the pack's green in the logo
     accentHover = { 0.47, 0.8, 0.65, 1 },
+    danger = { 0.78, 0.29, 0.29, 1 },
+    dangerHover = { 0.88, 0.38, 0.38, 1 },
     text = { 0.92, 0.92, 0.93, 1 },
     muted = { 0.53, 0.54, 0.58, 1 },
     off = { 0.2, 0.205, 0.225, 1 },
     knobOff = { 0.78, 0.78, 0.82, 1 },
     white = { 1, 1, 1, 1 },
+    sidebar = { 0.035, 0.037, 0.043, 1 },
+    accentDim = { 0.37, 0.71, 0.56, 0.14 },
 }
 
 local window
@@ -162,6 +166,7 @@ local function CreateToggle(parent, get, set)
     updaters[#updaters + 1] = function() toggle:Update(true) end
     return toggle
 end
+ns.CreateToggle = CreateToggle -- also in the bar's right-click list
 
 -- Thin track with a coloured fill, a round knob and the value on the right.
 local function CreateSlider(parent, minValue, maxValue, get, onChange, width)
@@ -222,6 +227,7 @@ end
 -- Rounded button. style: nil (dark outline) or "primary" (filled).
 local BUTTON_STYLES = {
     primary = { C.accent, C.accentHover, C.white },
+    danger = { C.danger, C.dangerHover, C.white },
 }
 
 local function CreateButton(parent, label, width, style)
@@ -236,6 +242,7 @@ local function CreateButton(parent, label, width, style)
     text:SetJustifyH("CENTER")
     text:SetText(label)
     if filled then text:SetShadowOffset(0, 0) end
+    button.label = text
 
     local hovered = false
     local function paint()
@@ -311,6 +318,76 @@ local function CreateSegmented(parent, choices, get, set, itemWidth)
     holder:Update()
     updaters[#updaters + 1] = function() holder:Update() end
     return holder
+end
+
+-- Button showing a choice; a click opens the game's menu to pick another.
+-- buildMenu(root) adds the menu's entries. Like Pocket Goblin's.
+local function CreateDropdown(parent, width, getLabel, buildMenu)
+    local dropdown = CreateFrame("Button", nil, parent)
+    dropdown:SetSize(width, 28)
+    local bg = Rounded(dropdown, "BACKGROUND", C.control)
+    Rounded(dropdown, "BORDER", C.controlBorder, "rounded-border")
+    local text = Text(dropdown, 13, C.text)
+    text:SetPoint("LEFT", 10, 0)
+    text:SetPoint("RIGHT", -26, 0)
+    text:SetWordWrap(false)
+    local chevron = Icon(dropdown, "icon-chevron", 14, C.muted)
+    chevron:SetPoint("RIGHT", -8, 0)
+
+    function dropdown:UpdateLabel()
+        text:SetText(getLabel())
+    end
+    dropdown:SetScript("OnClick", function(self)
+        if MenuUtil and MenuUtil.CreateContextMenu then
+            MenuUtil.CreateContextMenu(self, function(_, root) buildMenu(root) end)
+        end
+    end)
+    dropdown:SetScript("OnEnter", function() SetColor(bg, C.controlHover) end)
+    dropdown:SetScript("OnLeave", function() SetColor(bg, C.control) end)
+    dropdown:UpdateLabel()
+    updaters[#updaters + 1] = function() dropdown:UpdateLabel() end -- follows profile changes
+    return dropdown
+end
+
+local function CreateTextInput(parent, width, placeholderText)
+    local box = CreateFrame("EditBox", nil, parent)
+    box:SetSize(width, 28)
+    box:SetAutoFocus(false)
+    box:SetFont(FONT, 13, "")
+    box:SetTextColor(C.text[1], C.text[2], C.text[3])
+    box:SetTextInsets(10, 10, 0, 0)
+    box:SetMaxLetters(32)
+    Rounded(box, "BACKGROUND", C.control)
+    local border = Rounded(box, "BORDER", C.controlBorder, "rounded-border")
+    local placeholder = Text(box, 13, C.muted)
+    placeholder:SetPoint("LEFT", 10, 0)
+    placeholder:SetText(placeholderText)
+    box:SetScript("OnEscapePressed", box.ClearFocus)
+    box:SetScript("OnEditFocusGained", function() SetColor(border, C.accent) end)
+    box:SetScript("OnEditFocusLost", function() SetColor(border, C.controlBorder) end)
+    box:SetScript("OnTextChanged", function(self) placeholder:SetShown(self:GetText() == "") end)
+    return box
+end
+
+-- A button that asks "Confirm?" on the first click and acts on the second.
+local function CreateConfirmButton(parent, label, width, style, onConfirm)
+    local button = CreateButton(parent, label, width, style)
+    local armed = false
+    local function disarm()
+        armed = false
+        button.label:SetText(label)
+    end
+    button:SetScript("OnClick", function()
+        if armed then
+            disarm()
+            onConfirm()
+        else
+            armed = true
+            button.label:SetText(L["Confirm?"])
+            C_Timer.After(3, function() if armed then disarm() end end)
+        end
+    end)
+    return button
 end
 
 -- Small chevron button for moving a row up (towards the start) or down.
@@ -428,11 +505,11 @@ end
 ------------------------------------------------------------------------
 
 local function CreateBarCard(parent)
-    local card = CreateCard(parent, L["The bar"], BAR_CARD_WIDTH)
+    local card = CreateCard(parent, L["The bar"], CARD_WIDTH)
     AddRow(card, L["Lock the bar"],
         L["Unlock it to drag the bar anywhere. Right-click the bar to lock it again."],
         function(p)
-            return CreateToggle(p, function() return ns.db.locked end, ns.SetLocked)
+            return CreateToggle(p, function() return ns.account.locked end, ns.SetLocked)
         end)
     AddRow(card, L["Grow toward"], L["The way the bar runs from its first button."],
         function(p)
@@ -487,7 +564,7 @@ local function CreateBarCard(parent)
     AddRow(card, L["Minimap button"],
         L["Show a Fanny Pack button on the minimap. Click it to open this window, drag it to move it."],
         function(p)
-            return CreateToggle(p, function() return ns.db.minimapButton end, ns.SetMinimapButton)
+            return CreateToggle(p, function() return ns.account.minimapButton end, ns.SetMinimapButton)
         end)
     LayoutCard(card)
     return card
@@ -496,13 +573,23 @@ end
 -- The buttons in bar order, each with its icon, name, arrows to move it
 -- and an on/off switch.
 local function CreateButtonsCard(parent)
-    local card = CreateCard(parent, L["Buttons"], BUTTONS_CARD_WIDTH)
-    local rowWidth = BUTTONS_CARD_WIDTH - 40
+    local card = CreateCard(parent, L["Buttons"], CARD_WIDTH)
+    local rowWidth = CARD_WIDTH - 40
 
     local intro = Text(card, 12, C.muted)
     intro:SetPoint("TOPLEFT", 20, -52)
-    intro:SetText(L["The top one is the bar's first button. Right-click a button on the bar to pick which item it uses."])
+    intro:SetText(L["The top one is the bar's first button. Right-click a button on the bar to pick which item it uses and when its count turns red."])
     local top -- where the list starts, under the intro; set by Relayout
+
+    -- Headings over the two columns of switches, far enough apart for
+    -- "Out of combat" to fit over its switch.
+    local COLUMN_GAP = 30
+    local shownHeading = Text(card, 10, C.muted)
+    shownHeading:SetJustifyH("CENTER")
+    shownHeading:SetText(L["Out of combat"])
+    local combatHeading = Text(card, 10, C.muted)
+    combatHeading:SetJustifyH("CENTER")
+    combatHeading:SetText(L["In combat"])
 
     -- Only the buttons this character gets (poisons are for rogues).
     local rows, shown = {}, {}
@@ -540,12 +627,16 @@ local function CreateButtonsCard(parent)
         icon:SetTexture(select(5, C_Item.GetItemInfoInstant(kind.icon)))
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-        local toggle = CreateToggle(row, function() return ns.charDB.buttons[kind.key] end, function(value)
+        local toggle = CreateToggle(row, function() return ns.db.buttons[kind.key] end, function(value)
             ns.SetButtonShown(kind.key, value)
         end)
         toggle:SetPoint("RIGHT", -8, 0)
+        local combat = CreateToggle(row, function() return ns.ShowsInCombat(kind.key) end, function(value)
+            ns.SetShowsInCombat(kind.key, value)
+        end)
+        combat:SetPoint("RIGHT", toggle, "LEFT", -COLUMN_GAP, 0)
         row.down = CreateArrow(row, false, function() Move(kind.key, 1) end)
-        row.down:SetPoint("RIGHT", toggle, "LEFT", -10, 0)
+        row.down:SetPoint("RIGHT", combat, "LEFT", -10, 0)
         row.up = CreateArrow(row, true, function() Move(kind.key, -1) end)
         row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
 
@@ -569,31 +660,38 @@ local function CreateButtonsCard(parent)
             end)
             return button
         end)
+    AddRow(card, L["Use on your target"],
+        L["Bandages and scrolls go on a friendly target. With no target, or an enemy targeted, they go on you."],
+        function(p)
+            return CreateToggle(p, function() return ns.db.useOnTarget end, ns.SetUseOnTarget)
+        end)
     AddRow(card, L["Hide empty buttons"], L["Hide buttons for things you don't carry, instead of fading them."],
         function(p)
             return CreateToggle(p, function() return ns.db.hideEmpty end, ns.SetHideEmpty)
-        end)
-    AddRow(card, L["Hide food and drink in combat"], L["You can't eat or drink in a fight, so those buttons step aside."],
-        function(p)
-            return CreateToggle(p, function() return ns.db.hideEatingInCombat end, ns.SetHideEatingInCombat)
         end)
 
     -- Fits the card to a width; the intro's height decides where the list starts.
     function card:Relayout(width)
         self:SetWidth(width)
         intro:SetWidth(width - 40)
-        top = -52 - intro:GetStringHeight() - 16
+        local headings = -52 - intro:GetStringHeight() - 14
+        -- Centred over the switches: the right one ends 8 inside the row, which ends 20 inside the card.
+        shownHeading:ClearAllPoints()
+        shownHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 24, headings)
+        combatHeading:ClearAllPoints()
+        combatHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 48 - COLUMN_GAP - 24, headings)
+        top = headings - shownHeading:GetStringHeight() - 6
         for _, row in pairs(rows) do row:SetWidth(width - 40) end
         Layout()
         LayoutCard(self, top - #shown * 36 - 14)
     end
-    card:Relayout(BUTTONS_CARD_WIDTH)
+    card:Relayout(CARD_WIDTH)
     return card
 end
 
 -- How the buttons look.
 local function CreateLookCard(parent)
-    local card = CreateCard(parent, L["Look"], BAR_CARD_WIDTH)
+    local card = CreateCard(parent, L["Look"], CARD_WIDTH)
     AddRow(card, L["Shape"], L["The shape of the buttons."],
         function(p)
             return CreateSegmented(p, {
@@ -618,15 +716,6 @@ local function CreateLookCard(parent)
         function(p)
             return CreateSlider(p, 0, 16, function() return ns.db.spacing end, ns.SetSpacing, 140)
         end)
-    AddRow(card, L["Buff food reminder"], L["The buff food button glows softly while you're not Well Fed."],
-        function(p)
-            return CreateToggle(p, function() return ns.db.buffFoodGlow end, ns.SetBuffFoodGlow)
-        end)
-    AddRow(card, L["Weapon reminder"],
-        L["The buttons for weapon stones, oils and poisons glow softly while a weapon has nothing on it."],
-        function(p)
-            return CreateToggle(p, function() return ns.db.weaponGlow end, ns.SetWeaponGlow)
-        end)
     AddRow(card, L["Fade out of combat"],
         L["The bar fades away outside combat and comes back when you hover over it or a fight starts."],
         function(p)
@@ -636,15 +725,307 @@ local function CreateLookCard(parent)
     return card
 end
 
+-- The reminder glows as a small table: one row per reminder with its
+-- "running out" slider and its on/off switch, under column headings.
+local REMINDERS = {
+    { name = L["Buff food"], icon = 6888, minutes = "wellFed", setting = "buffFoodGlow", set = "SetBuffFoodGlow" },
+    { name = L["Elixirs"], icon = 2454, minutes = "elixir", setting = "elixirGlow", set = "SetElixirGlow" },
+    { name = L["Scrolls"], icon = 1181, minutes = "scroll", setting = "scrollGlow", set = "SetScrollGlow" },
+    { name = L["Weapons"], icon = 2862, minutes = "weapon", setting = "weaponGlow", set = "SetWeaponGlow" },
+}
+
+local function CreateRemindersCard(parent)
+    local card = CreateCard(parent, L["Reminders"], CARD_WIDTH)
+    local intro = Text(card, 12, C.muted)
+    intro:SetPoint("TOPLEFT", 20, -52)
+    intro:SetText(L["Buttons glow gold when their buff, or what's on your weapon, is missing, and silver this many minutes before it runs out (0: no silver)."])
+
+    local SLIDER_WIDTH = 120
+    local sliderHeading = Text(card, 10, C.muted)
+    sliderHeading:SetText(L["Running out"])
+    local onHeading = Text(card, 10, C.muted)
+    onHeading:SetText(L["On"])
+
+    local rows = {}
+    for _, info in ipairs(REMINDERS) do
+        local row = CreateFrame("Frame", nil, card)
+        row:SetHeight(32)
+        Rounded(row, "BACKGROUND", C.control)
+        local icon = row:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(22, 22)
+        icon:SetPoint("LEFT", 8, 0)
+        icon:SetTexture(select(5, C_Item.GetItemInfoInstant(info.icon)))
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        local toggle = CreateToggle(row, function() return ns.db[info.setting] end, function(value)
+            ns[info.set](value)
+            if ns.RefreshWindow then ns.RefreshWindow() end -- dims the slider
+        end)
+        toggle:SetPoint("RIGHT", -8, 0)
+        local slider = CreateSlider(row, 0, ns.RUNNING_OUT[info.minutes],
+            function() return ns.db[info.minutes .. "Minutes"] end,
+            function(value) ns.SetRunningOut(info.minutes, value) end, SLIDER_WIDTH)
+        slider:SetPoint("RIGHT", toggle, "LEFT", -16, 0)
+        updaters[#updaters + 1] = function() slider:SetAlpha(ns.db[info.setting] and 1 or 0.4) end
+
+        local name = Text(row, 14, C.text)
+        name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+        name:SetPoint("RIGHT", slider, "LEFT", -8, 0)
+        name:SetWordWrap(false)
+        name:SetText(info.name)
+        rows[#rows + 1] = row
+    end
+
+    function card:Relayout(width)
+        self:SetWidth(width)
+        intro:SetWidth(width - 40)
+        local headings = -52 - intro:GetStringHeight() - 12
+        -- Over the switch (8 inside the row, which is 20 inside the card) and
+        -- the slider's track, which ends 40 before its value.
+        onHeading:ClearAllPoints()
+        onHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 24, headings)
+        sliderHeading:ClearAllPoints()
+        sliderHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 48 - 16 - 40 - SLIDER_WIDTH / 2, headings)
+        local top = headings - onHeading:GetStringHeight() - 6
+        for i, row in ipairs(rows) do
+            row:SetWidth(width - 40)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 20, top - (i - 1) * 36)
+        end
+        self:SetHeight(-top + #rows * 36 - 4 + 20)
+    end
+    card:Relayout(CARD_WIDTH)
+    return card
+end
+
+-- A small "- 5 +" control for a number from 0 (shown as "off") up.
+local function CreateStepper(parent, get, set)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(96, 24)
+
+    local function Step(label, delta)
+        local button = CreateFrame("Button", nil, holder)
+        button:SetSize(24, 24)
+        local bg = Rounded(button, "BACKGROUND", C.control)
+        Rounded(button, "BORDER", C.controlBorder, "rounded-border")
+        local text = Text(button, 14, C.text)
+        text:SetPoint("CENTER", 0, 1)
+        text:SetJustifyH("CENTER")
+        text:SetText(label)
+        button:SetScript("OnEnter", function() SetColor(bg, C.controlHover) end)
+        button:SetScript("OnLeave", function() SetColor(bg, C.control) end)
+        button:SetScript("OnClick", function()
+            set(get() + delta)
+            holder:Update()
+        end)
+        return button
+    end
+    local minus = Step("-", -1)
+    minus:SetPoint("LEFT")
+    local plus = Step("+", 1)
+    plus:SetPoint("RIGHT")
+    local value = Text(holder, 13, C.text)
+    value:SetPoint("CENTER")
+    value:SetJustifyH("CENTER")
+
+    function holder:Update()
+        local number = get()
+        value:SetText(number > 0 and number or L["off"])
+        minus:SetEnabled(number > 0)
+        minus:SetAlpha(number > 0 and 1 or 0.4)
+    end
+    holder:Update()
+    updaters[#updaters + 1] = function() holder:Update() end
+    return holder
+end
+
+-- Every button's low-stock limit in one place, in bar order. The same
+-- limits are at the bottom of each button's right-click list.
+local function CreateLowStockCard(parent)
+    local card = CreateCard(parent, L["Low stock"], CARD_WIDTH)
+    AddRow(card, L["Low-stock warning"],
+        L["A button's count turns red when you're down to its limit or fewer. You can also set a limit at the bottom of the button's right-click list."],
+        function(p)
+            return CreateToggle(p, function() return ns.db.lowStockWarning end, ns.SetLowStockWarning)
+        end)
+
+    local rows, top = {}, nil
+    local function Layout()
+        local i = 0
+        for _, key in ipairs(ns.Order()) do
+            local row = rows[key]
+            if row then
+                i = i + 1
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT", 20, top - (i - 1) * 36)
+            end
+        end
+    end
+
+    -- With the warning off, the limits are kept but dimmed.
+    local function Dim()
+        for _, row in pairs(rows) do row:SetAlpha(ns.db.lowStockWarning and 1 or 0.4) end
+    end
+
+    for _, kind in ipairs(ns.KINDS) do
+        if ns.IsAvailable(kind.key) then
+            local row = CreateFrame("Frame", nil, card)
+            row:SetHeight(32)
+            Rounded(row, "BACKGROUND", C.control)
+            local icon = row:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(22, 22)
+            icon:SetPoint("LEFT", 8, 0)
+            icon:SetTexture(select(5, C_Item.GetItemInfoInstant(kind.icon)))
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            local stepper = CreateStepper(row, function() return ns.LowStock(kind.key) end, function(value)
+                ns.SetLowStock(kind.key, value)
+            end)
+            stepper:SetPoint("RIGHT", -8, 0)
+            local name = Text(row, 14, C.text)
+            name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+            name:SetPoint("RIGHT", stepper, "LEFT", -8, 0)
+            name:SetWordWrap(false)
+            name:SetText(kind.name)
+            rows[kind.key] = row
+        end
+    end
+    updaters[#updaters + 1] = Layout -- follows changes to the order
+    updaters[#updaters + 1] = Dim
+
+    -- The switch's row on top, then the list.
+    function card:Relayout(width)
+        self:SetWidth(width)
+        LayoutCard(self)
+        top = -self:GetHeight() + 4
+        local count = 0
+        for _, row in pairs(rows) do
+            row:SetWidth(width - 40)
+            count = count + 1
+        end
+        Layout()
+        Dim()
+        self:SetHeight(-top + count * 36 - 4 + 20)
+    end
+    card:Relayout(CARD_WIDTH)
+    return card
+end
+
+local function ProfileExists(name)
+    return name and tContains(ns.GetProfileNames(), name)
+end
+
+-- A dropdown with a button on its right, for a stacked row.
+local function DropdownWithButton(parent, dropdown, button)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(256, 32)
+    dropdown:SetParent(holder)
+    dropdown:SetPoint("LEFT")
+    button:SetParent(holder)
+    button:SetPoint("RIGHT")
+    return holder
+end
+
+-- Profiles: a whole bar setup each (for a tank, a healer...), like Pocket
+-- Goblin's. Each character uses one.
+local function CreateProfilesCard(parent)
+    local card = CreateCard(parent, L["Profiles"], CARD_WIDTH)
+    local copySource, deleteTarget
+
+    AddRow(card, L["Active profile"], L["The bar setup this character uses: buttons, order, layout and look."],
+        function(p)
+            return CreateDropdown(p, 256,
+                function() return ns.GetProfileName() end,
+                function(root)
+                    for _, name in ipairs(ns.GetProfileNames()) do
+                        local others = #ns.GetProfileUsers(name)
+                        local label = others > 0
+                            and ("%s  |cff8a8b93(+%d %s)|r"):format(name, others,
+                                others == 1 and L["character"] or L["characters"])
+                            or name
+                        root:CreateRadio(label, function() return ns.GetProfileName() == name end,
+                            function() ns.SetProfile(name) end)
+                    end
+                end)
+        end, true)
+    AddRow(card, L["New profile"], L["Starts as a copy of the active profile, and this character switches to it."],
+        function(p)
+            local holder = CreateFrame("Frame", nil, p)
+            holder:SetSize(256, 32)
+            local box = CreateTextInput(holder, 170, L["Profile name"])
+            box:SetPoint("LEFT")
+            local create = CreateButton(holder, L["Create"], 78, "primary")
+            create:SetPoint("RIGHT")
+            local function submit()
+                if ns.CreateProfile(box:GetText()) then
+                    box:SetText("")
+                    box:ClearFocus()
+                else
+                    ns.Print(L["Enter a name that isn't already used by a profile."])
+                end
+            end
+            create:SetScript("OnClick", submit)
+            box:SetScript("OnEnterPressed", submit)
+            return holder
+        end, true)
+    AddRow(card, L["Copy from"], L["Replace the active profile's settings with a copy of another profile."],
+        function(p)
+            local dropdown
+            dropdown = CreateDropdown(p, 170,
+                function() return ProfileExists(copySource) and copySource or L["Choose profile"] end,
+                function(root)
+                    for _, name in ipairs(ns.GetProfileNames()) do
+                        if name ~= ns.GetProfileName() then
+                            root:CreateRadio(name, function() return copySource == name end, function()
+                                copySource = name
+                                dropdown:UpdateLabel()
+                            end)
+                        end
+                    end
+                end)
+            local copy = CreateConfirmButton(p, L["Copy"], 78, nil, function()
+                if ProfileExists(copySource) then ns.CopyProfile(copySource) end
+            end)
+            return DropdownWithButton(p, dropdown, copy)
+        end, true)
+    AddRow(card, L["Delete profile"],
+        L["Characters using it switch to Default. Default and the active profile can't be deleted."],
+        function(p)
+            local dropdown
+            dropdown = CreateDropdown(p, 170,
+                function() return ProfileExists(deleteTarget) and deleteTarget or L["Choose profile"] end,
+                function(root)
+                    for _, name in ipairs(ns.GetProfileNames()) do
+                        if name ~= ns.GetProfileName() and name ~= ns.DEFAULT_PROFILE then
+                            root:CreateRadio(name, function() return deleteTarget == name end, function()
+                                deleteTarget = name
+                                dropdown:UpdateLabel()
+                            end)
+                        end
+                    end
+                end)
+            local delete = CreateConfirmButton(p, L["Delete"], 78, "danger", function()
+                if ProfileExists(deleteTarget) then ns.DeleteProfile(deleteTarget) end
+                deleteTarget = nil
+                dropdown:UpdateLabel()
+            end)
+            return DropdownWithButton(p, dropdown, delete)
+        end, true)
+    AddRow(card, L["Reset profile"], L["Back to the default settings."],
+        function(p)
+            return CreateConfirmButton(p, L["Reset"], 100, "danger", ns.ResetProfile)
+        end)
+    LayoutCard(card)
+    return card
+end
+
 ------------------------------------------------------------------------
 -- Window
 ------------------------------------------------------------------------
 
-local scroll, content, cards
 
 local function SaveGeometry()
     local point, _, relativePoint, x, y = window:GetPoint(1)
-    ns.db.window = {
+    ns.account.window = {
         point = point, relativePoint = relativePoint, x = x, y = y,
         width = window:GetWidth(), height = window:GetHeight(),
     }
@@ -812,46 +1193,103 @@ local function CreateHeader()
     line:SetPoint("BOTTOMRIGHT", -1, 0)
 end
 
--- Fits the cards to the window's width: two columns when there's room,
--- otherwise one. Returns the height of all the cards.
-local function LayoutWindow()
-    local width = window:GetWidth() - SCROLLBAR
-    local columns
-    if width >= TWO_COLUMNS then
-        local right = math.max(320, math.floor((width - 56) * 0.4))
-        columns = {
-            { width = width - 56 - right, cards.bar, cards.look },
-            { width = right, cards.buttons },
-        }
-    else
-        columns = { { width = width - 40, cards.bar, cards.buttons, cards.look } }
-    end
+-- The sidebar's pages and the cards on each.
+local PAGES = {
+    { key = "buttons", title = L["Buttons"], subtitle = L["Order, hotkeys & hiding"], icon = "icon-list",
+        cards = { CreateButtonsCard } },
+    { key = "bar", title = L["Bar"], subtitle = L["Position & layout"], icon = "icon-sort",
+        cards = { CreateBarCard } },
+    { key = "look", title = L["Look"], subtitle = L["Shape, size & fading"], icon = "icon-look",
+        cards = { CreateLookCard } },
+    { key = "reminders", title = L["Reminders"], subtitle = L["Glows & low stock"], icon = "icon-clock",
+        cards = { CreateRemindersCard, CreateLowStockCard } },
+    { key = "profiles", title = L["Profiles"], subtitle = L["Setups for roles & characters"], icon = "icon-profile",
+        cards = { CreateProfilesCard } },
+}
 
-    local x, height = 20, 0
-    for _, column in ipairs(columns) do
-        local y = -20
-        for _, card in ipairs(column) do
-            if card.Relayout then
-                card:Relayout(column.width)
-            else
-                card:SetWidth(column.width)
-                LayoutCard(card)
-            end
-            card:ClearAllPoints()
-            card:SetPoint("TOPLEFT", content, "TOPLEFT", x, y)
-            y = y - card:GetHeight() - 16
+local pages = {} -- [key] = { frame, scroll, content, cards, nav }
+local currentPage = "buttons"
+
+-- Fits a page's cards to the window's width and stacks them. Returns the
+-- height of all the cards.
+local function LayoutPage(key)
+    local page = pages[key]
+    local width = window:GetWidth() - SIDEBAR_WIDTH - 1 - SCROLLBAR - 40
+    local y = -20
+    for _, card in ipairs(page.cards) do
+        if card.Relayout then
+            card:Relayout(width)
+        else
+            card:SetWidth(width)
+            LayoutCard(card)
         end
-        x = x + column.width + 16
-        height = math.max(height, -y + 4)
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", page.content, "TOPLEFT", 20, y)
+        y = y - card:GetHeight() - 16
     end
-    content:SetHeight(height)
-    scroll.UpdateScrollBar()
-    return height
+    page.content:SetHeight(-y + 4)
+    page.scroll.UpdateScrollBar()
+    return -y + 4
+end
+
+local function SelectPage(key)
+    currentPage = key
+    for pageKey, page in pairs(pages) do
+        local selected = pageKey == key
+        page.frame:SetShown(selected)
+        page.nav.selected:SetShown(selected)
+        page.nav.accent:SetShown(selected)
+        SetColor(page.nav.icon, selected and C.accent or C.muted)
+        local color = selected and C.accent or C.text
+        page.nav.title:SetTextColor(color[1], color[2], color[3])
+    end
+    LayoutPage(key)
+end
+
+-- A sidebar entry: icon, title and a short subtitle. A long subtitle wraps
+-- onto more lines and the entry grows to fit, like Pocket Goblin's.
+local function CreateNavButton(parent, page, y)
+    local nav = CreateFrame("Button", nil, parent)
+    nav:SetPoint("TOPLEFT", 10, y)
+
+    nav.selected = Rounded(nav, "BACKGROUND", C.accentDim)
+    local hover = Rounded(nav, "BACKGROUND", { 1, 1, 1, 0.035 })
+    hover:Hide()
+
+    nav.accent = nav:CreateTexture(nil, "ARTWORK")
+    nav.accent:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+    nav.accent:SetSize(3, 30)
+    nav.accent:SetPoint("LEFT")
+
+    nav.icon = Icon(nav, page.icon, 20, C.muted)
+    nav.icon:SetPoint("LEFT", 16, 0)
+
+    nav.title = Text(nav, 15, C.text)
+    nav.title:SetText(page.title)
+    local subtitle = Text(nav, 11, C.muted)
+    subtitle:SetPoint("TOPLEFT", nav.title, "BOTTOMLEFT", 0, -4)
+    subtitle:SetWidth(SIDEBAR_WIDTH - 20 - 56)
+    subtitle:SetText(page.subtitle)
+
+    -- Title and subtitle centred together, at least NAV_HEIGHT high.
+    local textHeight = nav.title:GetStringHeight() + 4 + subtitle:GetStringHeight()
+    local height = math.max(NAV_HEIGHT, math.ceil(textHeight) + 12)
+    nav:SetSize(SIDEBAR_WIDTH - 20, height)
+    nav.title:SetPoint("TOPLEFT", 48, -(height - textHeight) / 2)
+
+    nav:SetScript("OnEnter", function() if currentPage ~= page.key then hover:Show() end end)
+    nav:SetScript("OnLeave", function() hover:Hide() end)
+    nav:SetScript("OnClick", function()
+        hover:Hide()
+        if SOUNDKIT then PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB) end
+        SelectPage(page.key)
+    end)
+    return nav
 end
 
 local function CreateWindow()
     window = CreateFrame("Frame", "FannyPackFrame", UIParent, "BackdropTemplate")
-    local saved = ns.db.window
+    local saved = ns.account.window
     if saved and saved.point then
         window:SetPoint(saved.point, UIParent, saved.relativePoint, saved.x, saved.y)
     else
@@ -891,30 +1329,54 @@ local function CreateWindow()
     end)
 
     CreateHeader()
-    scroll, content = CreateScrollArea(window)
-    scroll:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT - 1)
-    scroll:SetPoint("BOTTOMRIGHT", -SCROLLBAR, 1)
-    cards = {
-        bar = CreateBarCard(content),
-        look = CreateLookCard(content),
-        buttons = CreateButtonsCard(content),
-    }
+    window:SetSize(saved and saved.width or WIDTH, saved and saved.height or MIN_HEIGHT)
+
+    local sidebar = CreateFrame("Frame", nil, window)
+    sidebar:SetPoint("TOPLEFT", 1, -HEADER_HEIGHT - 1)
+    sidebar:SetPoint("BOTTOMLEFT", 1, 1)
+    sidebar:SetWidth(SIDEBAR_WIDTH)
+    local sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
+    sidebarBg:SetAllPoints()
+    sidebarBg:SetColorTexture(unpack(C.sidebar))
+    local sidebarLine = sidebar:CreateTexture(nil, "ARTWORK")
+    sidebarLine:SetColorTexture(1, 1, 1, 0.06)
+    sidebarLine:SetWidth(1)
+    sidebarLine:SetPoint("TOPRIGHT")
+    sidebarLine:SetPoint("BOTTOMRIGHT")
+
+    -- Each page: its own scrolling column of cards, right of the sidebar.
+    local tallest, navY = 0, -8
+    for _, info in ipairs(PAGES) do
+        local frame = CreateFrame("Frame", nil, window)
+        frame:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 0, 0)
+        frame:SetPoint("BOTTOMRIGHT", -1, 1)
+        frame:Hide()
+        local scroll, content = CreateScrollArea(frame)
+        scroll:SetPoint("TOPLEFT")
+        scroll:SetPoint("BOTTOMRIGHT", -SCROLLBAR, 0)
+        local cards = {}
+        for _, create in ipairs(info.cards) do cards[#cards + 1] = create(content) end
+        local nav = CreateNavButton(sidebar, info, navY)
+        navY = navY - nav:GetHeight() - NAV_SPACING
+        pages[info.key] = { frame = frame, scroll = scroll, content = content, cards = cards, nav = nav }
+        tallest = math.max(tallest, LayoutPage(info.key))
+    end
     CreateResizeGrip()
 
-    -- The saved size, or wide enough for two columns and tall enough for
-    -- everything, as far as the screen allows.
-    window:SetSize(saved and saved.width or WIDTH, saved and saved.height or MIN_HEIGHT)
+    -- The saved size, or tall enough for the longest page, as far as the
+    -- screen allows.
     local maxHeight = FitToScreen()
     if not (saved and saved.height) then
-        window:SetHeight(math.min(HEADER_HEIGHT + 1 + LayoutWindow(), maxHeight))
+        window:SetHeight(math.min(HEADER_HEIGHT + 1 + tallest, maxHeight))
     end
+    SelectPage(currentPage)
 
-    window:SetScript("OnSizeChanged", LayoutWindow)
+    window:SetScript("OnSizeChanged", function() LayoutPage(currentPage) end)
     window:SetScript("OnShow", function(self)
         if not InCombatLockdown() then self:SetPropagateKeyboardInput(true) end
         FitToScreen() -- the screen or UI scale may have changed
         ns.RefreshWindow()
-        LayoutWindow()
+        LayoutPage(currentPage)
     end)
 end
 

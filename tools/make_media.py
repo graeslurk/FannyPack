@@ -8,6 +8,10 @@
     glow-round.tga                     128x128 soft glows around a button of
                                        each shape; the button covers the
                                        middle 64x64
+    icon-look.tga, icon-clock.tga      32x32 sidebar icons for the Look and
+                                       Reminders pages, in the style of
+                                       Pocket Goblin's (icon-list, icon-sort
+                                       and icon-profile come from there)
 
 Shapes are drawn as signed distance fields with 1px anti-aliasing and saved
 as 32-bit TGA, which WoW loads directly. The other textures in Media come
@@ -56,6 +60,32 @@ def save(name, size, alpha):
         f.write(header + pixels)
 
 
+def ring(x, y, cx, cy, r, width):
+    return abs(math.hypot(x - cx, y - cy) - r) - width / 2
+
+
+def capsule(x, y, ax, ay, bx, by, r):
+    pax, pay, bax, bay = x - ax, y - ay, bx - ax, by - ay
+    h = max(0, min(1, (pax * bax + pay * bay) / (bax * bax + bay * bay)))
+    return math.hypot(pax - bax * h, pay - bay * h) - r
+
+
+def eye(x, y):
+    """An eye: an almond outline (two overlapping circles) and a pupil."""
+    almond = max(math.hypot(x, y - 9) - 14.5, math.hypot(x, y + 9) - 14.5)
+    outline = abs(almond) - 1.25
+    pupil = math.hypot(x, y) - 4
+    return min(outline, pupil)
+
+
+def clock(x, y):
+    """A clock face with its hands at ten past twelve."""
+    face = ring(x, y, 0, 0, 11, 2.5)
+    hour = capsule(x, y, 0, 0, 0, -6.5, 1.25)
+    minute = capsule(x, y, 0, 0, 5.5, 0, 1.25)
+    return min(face, hour, minute)
+
+
 def main():
     for shape in ("rounded", "round"):
         distance = SHAPES[shape]
@@ -66,6 +96,9 @@ def main():
             outside = max(0.0, d(x, y, 32))
             return math.exp(-((outside / GLOW_SPREAD) ** 2))
         save("glow-" + shape, 128, glow)
+
+    for name, shape in (("icon-look", eye), ("icon-clock", clock)):
+        save(name, 32, lambda x, y, d=shape: 0.5 - d(x, y))
 
 
 if __name__ == "__main__":

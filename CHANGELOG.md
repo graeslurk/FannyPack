@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.0
+
+New buttons:
+- **Rune**: Demonic Rune and Dark Rune, which have their own cooldown apart from potions
+- **Mana gem** (mages): so a mana gem and a mana potion can both be ready. Mana gems no longer end up on the mana potion button
+- **Other potion**: every potion that isn't a health or mana potion, such as protection, Free Action, Swiftness and Rage potions. Right-click it to pick which one
+- **Eat & drink**: eats and drinks in one click, using your Food and Drink buttons' items. Its count is whichever runs out first
+
+The new buttons are added at the end of your bar; move them with the arrows in the options.
+
+Reminders:
+- **Low-stock warning**: a button's count turns red when you're down to your last few (5 bandages, 3 potions and so on by default). Change the limit at the bottom of the button's right-click list or on the Reminders page, or turn the warning off altogether
+- **Elixirs and scrolls** glow gold while their buff isn't on you
+- **Running out**: buff food, elixirs, scrolls and weapon stones, oils and poisons glow silver shortly before they run out. Choose how long before, for each of them, on the Reminders page (2 minutes by default, or 0 for no silver glow)
+- All reminder glows **pulse together**, and look the same on light and dark ground
+
+Buttons and the bar:
+- **In and out of combat**: each button has its own switch for each, so it can show always, only outside fights (food, drink and buff food by default, as before) or only in fights. The bar still closes up around hidden buttons. This replaces the "Hide food and drink in combat" switch
+- **Use on your target**: bandages and scrolls can go on a friendly target instead of always on you. With no target, or an enemy targeted, they go on you. Off by default
+- **Use up low-level items first**: a switch in each button's right-click list makes it pick the lowest-level item and smallest stack instead of the best, to free bag space while levelling
+
+Options and profiles:
+- **Options in pages**: a sidebar with Buttons, Bar, Look, Reminders and Profiles, instead of everything on one page
+- **Profiles**: keep a whole bar setup per role or character, like one for tanking and one for healing. Switch, create, copy, reset and delete them on the Profiles page, or with `/fannypack profile <name>`. Your current settings become the Default profile, and which buttons show is now part of the profile instead of set per character
+
+Fixed:
+- With only one kind of elixir, it no longer shows on both the Elixir and Second elixir buttons when you had picked it for the second one. The second button now only shows when you carry two different elixirs
+
 ## 1.1.0
 
 New:

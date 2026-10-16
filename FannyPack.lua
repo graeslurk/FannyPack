@@ -18,28 +18,39 @@ local GetItemCount = C_Item.GetItemCount or GetItemCount
 -- in the client's language) and fallback its English name, in case the
 -- spell isn't known. Classic items are plain "Consumable", without a food
 -- or bandage subtype to go by. icon is an item whose icon the button shows
--- when you carry none. eating: food and drink, which hide in combat.
+-- when you carry none. eating: food and drink, which hide in combat unless
+-- the player turns them on there (see ns.ShowsInCombat).
 -- list: the button shares another button's items (the second elixir takes
 -- the best one the first doesn't use); allowSame: it may use the same one
 -- when there's no other. slot: the item goes on the weapon in that slot
 -- (16 main hand, 17 off-hand), shiftSlot with Shift held. class: only that
--- class gets the button. self: always used on you, even with a friend
--- targeted. The order here is the default order on the bar.
+-- class gets the button. self: used on you, even with a friend targeted
+-- (unless "Use on your target" is on). lowStock: the count turns red at this many or fewer, unless
+-- changed in the button's right-click list (none: no warning). The order
+-- here is the default order on the bar. buff: glows while the buff from its
+-- item isn't on you. combo: uses the items of these buttons in one press.
 ns.KINDS = {
     { key = "healthstone", name = L["Healthstone"], icon = 5509 }, -- see HEALTHSTONES
-    { key = "bandage", name = L["Bandages"], spell = 746, fallback = "First Aid", icon = 1251, self = true },
-    { key = "healthPotion", name = L["Health potion"], spell = 439, fallback = "Healing Potion", icon = 118 },
-    { key = "manaPotion", name = L["Mana potion"], spell = 437, fallback = "Restore Mana", icon = 2455 },
-    { key = "elixir", name = L["Elixir"], icon = 2454 }, -- elixirs and flasks, see Classify
-    { key = "elixir2", name = L["Second elixir"], icon = 5997, list = "elixir" },
-    { key = "scroll", name = L["Scroll"], icon = 1181, self = true }, -- see SCROLLS
+    { key = "bandage", name = L["Bandages"], spell = 746, fallback = "First Aid", icon = 1251, self = true,
+        lowStock = 5 },
+    { key = "healthPotion", name = L["Health potion"], spell = 439, fallback = "Healing Potion", icon = 118,
+        lowStock = 3 },
+    { key = "manaPotion", name = L["Mana potion"], spell = 437, fallback = "Restore Mana", icon = 2455, lowStock = 3 },
+    { key = "rune", name = L["Rune"], icon = 12662, lowStock = 2 }, -- see RUNES
+    { key = "manaGem", name = L["Mana gem"], icon = 5514, class = "MAGE" }, -- see MANA_GEMS
+    { key = "otherPotion", name = L["Other potion"], icon = 5634 }, -- potions that aren't health or mana, see Classify
+    { key = "elixir", name = L["Elixir"], icon = 2454, buff = true }, -- elixirs and flasks, see Classify
+    { key = "elixir2", name = L["Second elixir"], icon = 5997, list = "elixir", buff = true },
+    { key = "scroll", name = L["Scroll"], icon = 1181, self = true, buff = true }, -- see SCROLLS
     { key = "weapon", name = L["Weapon stone or oil"], icon = 2862, slot = 16, shiftSlot = 17 }, -- see WEAPON_ITEMS
-    { key = "poison", name = L["Main-hand poison"], icon = 6947, slot = 16, class = "ROGUE" }, -- see POISONS
+    { key = "poison", name = L["Main-hand poison"], icon = 6947, slot = 16, class = "ROGUE", lowStock = 5 }, -- see POISONS
     { key = "poison2", name = L["Off-hand poison"], icon = 2892, slot = 17, class = "ROGUE",
-        list = "poison", allowSame = true },
-    { key = "food", name = L["Food"], spell = 433, fallback = "Food", icon = 117, eating = true },
-    { key = "drink", name = L["Drink"], spell = 430, fallback = "Drink", icon = 159, eating = true },
-    { key = "buffFood", name = L["Buff food"], icon = 6888, eating = true }, -- food whose tooltip mentions Well Fed
+        list = "poison", allowSame = true, lowStock = 5 },
+    { key = "food", name = L["Food"], spell = 433, fallback = "Food", icon = 117, eating = true, lowStock = 5 },
+    { key = "drink", name = L["Drink"], spell = 430, fallback = "Drink", icon = 159, eating = true, lowStock = 5 },
+    { key = "eatDrink", name = L["Eat & drink"], icon = 117, combo = { "food", "drink" }, eating = true, lowStock = 5 },
+    -- food whose tooltip mentions Well Fed
+    { key = "buffFood", name = L["Buff food"], icon = 6888, eating = true, lowStock = 2 },
 }
 
 -- Warlock healthstones, Minor to Major, each with its two improved versions
@@ -65,6 +76,14 @@ local WEAPON_ITEMS = {
     [20745] = true, [20747] = true, [20748] = true, -- mana oils, Minor to Brilliant
     [3824] = true, [3829] = true, -- Shadow Oil, Frost Oil
 }
+
+-- Demonic Rune and Dark Rune: mana for health, on their own cooldown, apart
+-- from potions.
+local RUNES = { [12662] = true, [20520] = true }
+
+-- Mage mana gems, Agate to Ruby: also on their own cooldown, and their use
+-- effect shares its name with mana potions', so they're sorted out first.
+local MANA_GEMS = { [5514] = true, [5513] = true, [8007] = true, [8008] = true }
 
 -- Scrolls of Agility, Intellect, Protection, Spirit, Stamina and Strength,
 -- ranks I to IV. Newer ones are caught by their names (see Classify).
@@ -94,6 +113,7 @@ end
 
 local CONSUMABLE_SUBCLASS = Enum.ItemConsumableSubclass or {}
 local SCROLL_SUBCLASS = CONSUMABLE_SUBCLASS.Scroll or 4
+local POTION_SUBCLASS = CONSUMABLE_SUBCLASS.Potion or 1
 local ELIXIR_SUBCLASSES = {
     [CONSUMABLE_SUBCLASS.Elixir or 2] = true,
     [CONSUMABLE_SUBCLASS.Flask or 3] = true,
@@ -109,33 +129,74 @@ for _, kind in ipairs(ns.KINDS) do
     _G["BINDING_NAME_CLICK " .. ns.ButtonName(kind.key) .. ":LeftButton"] = kind.name
 end
 
-local DEFAULTS = {
+-- Settings shared by all your characters, outside profiles.
+local ACCOUNT_DEFAULTS = {
     locked = true,
+    minimapButton = true,
+    minimapAngle = 200, -- degrees around the minimap, 0 = right, 90 = top
+    -- window = the options window's place and size
+}
+
+-- A profile is the whole bar setup. Each character uses one; all start on
+-- Default. Tables here are copied into each profile.
+local PROFILE_DEFAULTS = {
     buttonSize = 26,
     spacing = 2,
     hideEmpty = true, -- false: empty buttons are faded instead
-    hideEatingInCombat = true, -- hide food, buff food and drink in combat
+    combat = {}, -- [button key] = shown in combat; unset: all but food and drink
     shape = "square", -- square, rounded or round
     border = "none", -- none, silver or gold
     buffFoodGlow = true, -- the buff food button glows while you're not Well Fed
     weaponGlow = true, -- the weapon stone or oil button glows while a weapon has none on it
+    elixirGlow = true, -- the elixir buttons glow while their buff isn't on you
+    -- scrollGlow: the same for the scroll button; starts as elixirGlow, which it was part of
+    preferLow = {}, -- [button key] = true: pick the lowest-level item and smallest stack first
     fadeOutOfCombat = false, -- hide the bar out of combat until you hover over it
+    useOnTarget = false, -- bandages and scrolls go on a friendly target instead of always on you
     attached = true, -- the bar moves along with the player frame
     direction = "LEFT", -- the way the bar grows from its first button: RIGHT, LEFT, DOWN or UP
     perRow = 12, -- buttons per row before the bar wraps; 12 or more keeps one row
-    -- rowsToward = where new rows go: UP or DOWN for a bar growing sideways,
-    -- LEFT or RIGHT for one growing up or down (see ns.RowsToward)
     order = {}, -- button keys from the first button on; filled in from ns.KINDS
-    minimapButton = true,
-    minimapAngle = 200, -- degrees around the minimap, 0 = right, 90 = top
-    -- position = { frame = "player" or "screen", x, y } once the bar is
-    -- dragged; until then it sits above the player frame
+    lowStock = {}, -- [button key] = warn at this many or fewer; unset: the kind's default
+    lowStockWarning = true, -- false: no count turns red, whatever the limits
+    buttons = {}, -- [button key] = shown out of combat; filled in for the character's class
 }
+-- Also part of a profile, but unset by default:
+--   rowsToward = where new rows go: UP or DOWN for a bar growing sideways,
+--     LEFT or RIGHT for one growing up or down (see ns.RowsToward)
+--   position = { frame = "player" or "screen", x, y } once the bar is
+--     dragged; until then it sits above the player frame
+--   wellFedMinutes, elixirMinutes, scrollMinutes, weaponMinutes = how long
+--     before each runs out its reminder glows silver (0: never); see
+--     ns.RUNNING_OUT
+-- And from 1.1.0, carried into the first profile and then converted (see
+-- FillProfile): hideEatingInCombat.
+local PROFILE_ONLY = { rowsToward = true, position = true, hideEatingInCombat = true }
+
+-- The "running out" settings, each up to how long that kind of buff lasts,
+-- in minutes. Saved as <name>Minutes in the profile.
+ns.RUNNING_OUT = { wellFed = 15, elixir = 60, scroll = 30, weapon = 30 }
+local DEFAULT_RUNNING_OUT = 2
+
+local DEFAULT_PROFILE = "Default"
+ns.DEFAULT_PROFILE = DEFAULT_PROFILE
 
 -- Classes without mana don't get the drink and mana potion buttons by default.
 local NO_MANA = { WARRIOR = true, ROGUE = true }
+local MANA_KINDS = { drink = true, manaPotion = true, rune = true, eatDrink = true }
 
-local db, charDB -- FannyPackDB (account), FannyPackCharDB (this character)
+local account -- FannyPackDB: account-wide settings and the profiles
+local db -- the active profile (account.profiles[name])
+local charDB -- FannyPackCharDB: this character's chosen items
+local characterKey -- "Name - Realm", for account.profileKeys
+
+local function DeepCopy(source)
+    local copy = {}
+    for key, value in pairs(source) do
+        copy[key] = type(value) == "table" and DeepCopy(value) or value
+    end
+    return copy
+end
 
 ns.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(ADDON_NAME, "Version")
 if not ns.VERSION or ns.VERSION:find("^@") then
@@ -238,6 +299,7 @@ local function Classify(itemID)
     end
     local listed = (HEALTHSTONES[itemID] and "healthstone") or (WEAPON_ITEMS[itemID] and "weapon")
         or (POISONS[itemID] and "poison") or (SCROLLS[itemID] and "scroll")
+        or (RUNES[itemID] and "rune") or (MANA_GEMS[itemID] and "manaGem")
     if listed then
         itemKinds[itemID] = listed
         return listed
@@ -269,6 +331,10 @@ local function Classify(itemID)
             key = "weapon"
         elseif name:find(L["poison"], 1, true) then
             key = "poison"
+        elseif name:find(L["demonic rune"], 1, true) or name:find(L["dark rune"], 1, true) then
+            key = "rune"
+        elseif subClassID == POTION_SUBCLASS or name:find(L["potion"], 1, true) then
+            key = "otherPotion" -- health and mana potions were found by their use effects above
         end
     end
     if key == "food" or key == false then
@@ -303,12 +369,25 @@ end
 -- itemLevel, conjured, usable }, best first.
 ns.items = {}
 for _, kind in ipairs(ns.KINDS) do
-    if not kind.list then ns.items[kind.key] = {} end
+    if not kind.list and not kind.combo then ns.items[kind.key] = {} end
 end
 
 -- The items a button picks from: its own, or the button's it shares.
+local NO_ITEMS = {} -- for Eat & drink, which has no items of its own
+
 function ns.ListFor(key)
-    return ns.items[ns.KIND_BY_KEY[key].list or key]
+    local kind = ns.KIND_BY_KEY[key]
+    if kind.combo then return NO_ITEMS end
+    return ns.items[kind.list or key]
+end
+
+-- For "use up low-level items first": conjured ones (they vanish anyway),
+-- then the lowest level, then the smallest stack.
+local function Lower(a, b)
+    if a.conjured ~= b.conjured then return a.conjured end
+    if a.level ~= b.level then return a.level < b.level end
+    if a.count ~= b.count then return a.count < b.count end
+    return a.itemID < b.itemID
 end
 
 -- Best first: items you can use, then the highest required level, then
@@ -375,22 +454,58 @@ end
 -- The item a button should use: the one you picked if you still carry it,
 -- otherwise the best one you can use (or, if you can't use any, the best
 -- one anyway, shown in red).
-function ns.ItemFor(key)
-    local list = ns.ListFor(key)
+-- The second button sharing a button's items: [elixir] = elixir2.
+local SECOND = {}
+for _, kind in ipairs(ns.KINDS) do
+    if kind.list then SECOND[kind.list] = kind.key end
+end
+
+-- The item picked by hand for a button, if it's in your bags.
+local function HandPicked(key, list)
     local chosen = charDB and charDB.chosen[key]
-    if chosen then
-        for _, entry in ipairs(list) do
-            if entry.itemID == chosen then return entry end
-        end
-    end
-    -- A button sharing another's items skips the one that button uses,
-    -- unless it may use the same one and there's nothing else.
-    local kind = ns.KIND_BY_KEY[key]
-    local taken = kind.list and ns.ItemFor(kind.list)
+    if not chosen then return nil end
     for _, entry in ipairs(list) do
-        if entry ~= taken then return entry end
+        if entry.itemID == chosen then return entry end
     end
-    if kind.allowSame then return taken end
+end
+
+-- The best item other than skip, or with "use up low-level items first" on,
+-- the lowest usable one.
+local function AutoPick(key, list, skip)
+    if db and db.preferLow[key] then
+        local pick
+        for _, entry in ipairs(list) do
+            if entry ~= skip and entry.usable and (not pick or Lower(entry, pick)) then pick = entry end
+        end
+        if pick then return pick end
+    end
+    for _, entry in ipairs(list) do
+        if entry ~= skip then return entry end
+    end
+end
+
+function ns.ItemFor(key)
+    local kind = ns.KIND_BY_KEY[key]
+    if kind.combo then -- something to eat or drink, if either button has it
+        return ns.ItemFor(kind.combo[1]) or ns.ItemFor(kind.combo[2])
+    end
+    local list = ns.ListFor(key)
+    local picked = HandPicked(key, list)
+
+    if kind.list then
+        -- A second button (second elixir, off-hand poison) never uses the
+        -- first one's item, so with one kind of elixir there's no second
+        -- elixir. Poisons may share, when picked so or there's no other.
+        local first = ns.ItemFor(kind.list)
+        if picked and (picked ~= first or kind.allowSame) then return picked end
+        return AutoPick(key, list, first) or (kind.allowSame and first or nil)
+    end
+
+    if picked then return picked end
+    -- What you picked by hand for the second button beats this button's
+    -- automatic pick, unless there's nothing else.
+    local reserved = SECOND[key] and HandPicked(SECOND[key], list)
+    return AutoPick(key, list, reserved) or reserved
 end
 
 -- Total carried of a kind, for the minimap tooltip.
@@ -428,7 +543,7 @@ function ns.SetChoice(key, itemID)
 end
 
 function ns.SetButtonShown(key, show)
-    charDB.buttons[key] = show and true or false
+    db.buttons[key] = show and true or false
     ns.UpdateBar()
 end
 
@@ -447,8 +562,16 @@ function ns.SetHideEmpty(value)
     ns.UpdateBar()
 end
 
-function ns.SetHideEatingInCombat(value)
-    db.hideEatingInCombat = value and true or false
+-- Whether a button stays on the bar in combat. Food and drink don't by
+-- default, since you can't eat or drink in a fight.
+function ns.ShowsInCombat(key)
+    local shown = db.combat[key]
+    if shown == nil then return not ns.KIND_BY_KEY[key].eating end
+    return shown
+end
+
+function ns.SetShowsInCombat(key, value)
+    db.combat[key] = value and true or false
     ns.UpdateBar()
 end
 
@@ -467,6 +590,27 @@ function ns.SetFadeOutOfCombat(value)
     ns.UpdateBar()
 end
 
+-- name: a key of ns.RUNNING_OUT.
+function ns.SetRunningOut(name, value)
+    db[name .. "Minutes"] = math.floor(value + 0.5)
+    ns.UpdateBar()
+end
+
+function ns.SetElixirGlow(value)
+    db.elixirGlow = value and true or false
+    ns.UpdateBar()
+end
+
+function ns.SetScrollGlow(value)
+    db.scrollGlow = value and true or false
+    ns.UpdateBar()
+end
+
+function ns.SetPreferLow(key, value)
+    db.preferLow[key] = value and true or nil
+    ns.UpdateBar()
+end
+
 function ns.SetWeaponGlow(value)
     db.weaponGlow = value and true or false
     ns.UpdateBar()
@@ -481,6 +625,28 @@ function ns.SetDirection(direction)
     db.direction = direction
     ns.UpdateBar()
     if ns.RefreshWindow then ns.RefreshWindow() end -- the New rows choices depend on it
+end
+
+-- The count turns red at this many or fewer; 0 is no warning.
+function ns.LowStock(key)
+    return db.lowStock[key] or ns.KIND_BY_KEY[key].lowStock or 0
+end
+
+function ns.SetLowStock(key, value)
+    db.lowStock[key] = math.max(0, math.min(99, value))
+    ns.UpdateBar()
+    if ns.RefreshWindow then ns.RefreshWindow() end -- set from the right-click list, it's on a page too
+end
+
+function ns.SetLowStockWarning(value)
+    db.lowStockWarning = value and true or false
+    ns.UpdateBar()
+    if ns.RefreshWindow then ns.RefreshWindow() end -- dims the limits
+end
+
+function ns.SetUseOnTarget(value)
+    db.useOnTarget = value and true or false
+    ns.UpdateBar()
 end
 
 function ns.SetPerRow(value)
@@ -594,19 +760,21 @@ local function ShowHelp()
     print(L["  /fannypack - open the options"])
     print(L["  /fannypack lock - lock or unlock the bar"])
     print(L["  /fannypack reset - put the bar back above your player frame"])
+    print(L["  /fannypack profile [name] - show or switch this character's profile"])
     print(L["  /fannypack minimap - show or hide the minimap button"])
     print(L["  /fannypack debug - list the consumables in your bags and their buttons"])
 end
 
 SLASH_FANNYPACK1 = "/fannypack"
 SlashCmdList.FANNYPACK = function(msg)
-    local command = (msg or ""):lower():match("^%s*(%S*)")
+    local command, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
+    command = command:lower()
     if command == "" then
         ns.ToggleWindow()
     elseif command == "lock" or command == "unlock" then
-        local lock = command == "lock" and not db.locked -- "lock" toggles, "unlock" unlocks
+        local lock = command == "lock" and not account.locked -- "lock" toggles, "unlock" unlocks
         if ns.SetLocked(lock) then
-            Print(db.locked and L["The bar is locked."] or L["The bar is unlocked: drag it anywhere, right-click it to lock it."])
+            Print(account.locked and L["The bar is locked."] or L["The bar is unlocked: drag it anywhere, right-click it to lock it."])
         end
     elseif command == "reset" then
         if ns.ResetPosition() then
@@ -615,10 +783,18 @@ SlashCmdList.FANNYPACK = function(msg)
     elseif command == "debug" then
         ShowDebug()
         ShowFrameDebug()
+    elseif command == "profile" then
+        if rest == "" then
+            Print(L["Profile: %s. Profiles: %s"], ns.GetProfileName(), table.concat(ns.GetProfileNames(), ", "))
+        elseif account.profiles[rest] then
+            ns.SetProfile(rest)
+        else
+            Print(L["No profile called %s. Create one in the options (/fannypack)."], rest)
+        end
     elseif command == "minimap" then
-        ns.SetMinimapButton(not db.minimapButton)
+        ns.SetMinimapButton(not account.minimapButton)
         if ns.RefreshWindow then ns.RefreshWindow() end
-        Print(db.minimapButton and L["Minimap button: on"] or L["Minimap button: off"])
+        Print(account.minimapButton and L["Minimap button: on"] or L["Minimap button: off"])
     else
         ShowHelp()
     end
@@ -628,21 +804,38 @@ end
 -- Events
 ------------------------------------------------------------------------
 
-local function LoadSettings()
-    FannyPackDB = FannyPackDB or {}
-    db = FannyPackDB
-    if db.position and not db.position.frame then
-        db.position = nil -- saved by a test version in another format
+-- Fills in a profile's missing settings, and brings older ones up to date.
+local function FillProfile(profile)
+    if profile.position and not profile.position.frame then
+        profile.position = nil -- saved by a test version in another format
     end
-    if db.border == "dark" then db.border = "none" end -- a test version's border
-    for key, value in pairs(DEFAULTS) do
-        if db[key] == nil then db[key] = value end
+    if profile.border == "dark" then profile.border = "none" end -- a test version's border
+    for key, value in pairs(PROFILE_DEFAULTS) do
+        if profile[key] == nil then profile[key] = type(value) == "table" and DeepCopy(value) or value end
     end
+
+    -- Before per-button combat settings, one switch hid food and drink in
+    -- combat; turned off, they stay shown.
+    if profile.hideEatingInCombat == false then
+        for _, kind in ipairs(ns.KINDS) do
+            if kind.eating then profile.combat[kind.key] = true end
+        end
+    end
+    profile.hideEatingInCombat = nil
+
+    -- "Running out" settings, each no longer than its buff lasts. They
+    -- start from the single setting of earlier test versions.
+    for name, longest in pairs(ns.RUNNING_OUT) do
+        local key = name .. "Minutes"
+        profile[key] = math.min(profile[key] or profile.runningOutMinutes or DEFAULT_RUNNING_OUT, longest)
+    end
+    profile.runningOutMinutes = nil
+    if profile.scrollGlow == nil then profile.scrollGlow = profile.elixirGlow end
 
     -- Keep the order to known buttons, each once, and add any new ones at the end.
     local known, order = {}, {}
     for _, kind in ipairs(ns.KINDS) do known[kind.key] = true end
-    for _, key in ipairs(db.order) do
+    for _, key in ipairs(profile.order) do
         if known[key] then
             order[#order + 1] = key
             known[key] = nil
@@ -651,20 +844,146 @@ local function LoadSettings()
     for _, kind in ipairs(ns.KINDS) do
         if known[kind.key] then order[#order + 1] = kind.key end
     end
-    db.order = order
+    profile.order = order
 
-    FannyPackCharDB = FannyPackCharDB or {}
-    charDB = FannyPackCharDB
-    charDB.chosen = charDB.chosen or {}
-    charDB.buttons = charDB.buttons or {}
+    -- Buttons new to the profile: all on, except mana buttons for classes
+    -- without mana, which are off in and out of combat.
     local noMana = NO_MANA[select(2, UnitClass("player"))]
     for _, kind in ipairs(ns.KINDS) do
-        if charDB.buttons[kind.key] == nil then
-            charDB.buttons[kind.key] = not (noMana and (kind.key == "drink" or kind.key == "manaPotion"))
+        if profile.buttons[kind.key] == nil then
+            local on = not (noMana and MANA_KINDS[kind.key])
+            profile.buttons[kind.key] = on
+            if not on then profile.combat[kind.key] = false end
         end
     end
 
-    ns.db, ns.charDB = db, charDB
+    -- The first switch used to hide a button altogether; now it's only out
+    -- of combat. Buttons switched off before stay off in combat too.
+    if not profile.separateCombat then
+        for key, shown in pairs(profile.buttons) do
+            if shown == false and profile.combat[key] == nil then profile.combat[key] = false end
+        end
+        profile.separateCombat = true
+    end
+end
+
+local function LoadProfile(name)
+    local profile = account.profiles[name] or {}
+    account.profiles[name] = profile
+    FillProfile(profile)
+    account.profileKeys[characterKey] = name
+    db = profile
+    ns.db = profile
+end
+
+local function LoadSettings()
+    FannyPackDB = FannyPackDB or {}
+    account = FannyPackDB
+    FannyPackCharDB = FannyPackCharDB or {}
+    charDB = FannyPackCharDB
+
+    -- Before profiles, the settings sat directly in FannyPackDB, and which
+    -- buttons show was kept per character: together they become Default.
+    if not account.profiles then
+        local profile = {}
+        for key in pairs(PROFILE_DEFAULTS) do profile[key], account[key] = account[key], nil end
+        for key in pairs(PROFILE_ONLY) do profile[key], account[key] = account[key], nil end
+        profile.buttons = charDB.buttons
+        account.profiles = { [DEFAULT_PROFILE] = profile }
+    end
+    charDB.buttons = nil -- now part of the profile
+    account.profileKeys = account.profileKeys or {}
+    for key, value in pairs(ACCOUNT_DEFAULTS) do
+        if account[key] == nil then account[key] = value end
+    end
+
+    charDB.chosen = charDB.chosen or {}
+    characterKey = UnitName("player") .. " - " .. GetRealmName()
+    LoadProfile(account.profileKeys[characterKey] or DEFAULT_PROFILE)
+    ns.account, ns.charDB = account, charDB
+end
+
+------------------------------------------------------------------------
+-- Profiles
+------------------------------------------------------------------------
+
+-- Redraws everything after the active profile changed. The bar's buttons
+-- can't change in combat, so they follow when it ends.
+local function ProfileChanged()
+    if InCombatLockdown() then
+        Print(L["The bar will change when combat ends."])
+    end
+    ns.UpdateBar()
+    if ns.RefreshWindow then ns.RefreshWindow() end
+    if ns.RefreshMinimapButton then ns.RefreshMinimapButton() end
+end
+
+function ns.GetProfileName()
+    return account.profileKeys[characterKey]
+end
+
+function ns.GetProfileNames()
+    local names = {}
+    for name in pairs(account.profiles) do names[#names + 1] = name end
+    table.sort(names)
+    return names
+end
+
+-- Other characters that use the profile.
+function ns.GetProfileUsers(name)
+    local users = {}
+    for key, profileName in pairs(account.profileKeys) do
+        if profileName == name and key ~= characterKey then users[#users + 1] = key end
+    end
+    table.sort(users)
+    return users
+end
+
+function ns.SetProfile(name)
+    if not account.profiles[name] or name == ns.GetProfileName() then return end
+    LoadProfile(name)
+    Print(L["Using profile %s."], name)
+    ProfileChanged()
+end
+
+-- Creates a profile as a copy of the current one and switches to it.
+-- Returns false if the name is empty or already taken.
+function ns.CreateProfile(name)
+    name = name and strtrim(name)
+    if not name or name == "" or account.profiles[name] then return false end
+    account.profiles[name] = DeepCopy(db)
+    ns.SetProfile(name)
+    return true
+end
+
+-- Replaces the current profile's settings with a copy of another profile's.
+function ns.CopyProfile(source)
+    local from = account.profiles[source]
+    if not from or from == db then return end
+    wipe(db)
+    for key, value in pairs(DeepCopy(from)) do db[key] = value end
+    FillProfile(db) -- the source may not have been loaded since an update
+    Print(L["Copied profile %s into %s."], source, ns.GetProfileName())
+    ProfileChanged()
+end
+
+function ns.ResetProfile()
+    wipe(db)
+    FillProfile(db)
+    Print(L["Profile %s was reset."], ns.GetProfileName())
+    ProfileChanged()
+end
+
+-- Deletes a profile other than the active one or Default. Characters that
+-- used it go back to Default.
+function ns.DeleteProfile(name)
+    if name == DEFAULT_PROFILE or name == ns.GetProfileName() or not account.profiles[name] then return end
+    account.profiles[name] = nil
+    for key, profileName in pairs(account.profileKeys) do
+        if profileName == name then account.profileKeys[key] = DEFAULT_PROFILE end
+    end
+    Print(L["Deleted profile %s."], name)
+    if ns.RefreshWindow then ns.RefreshWindow() end
 end
 
 local frame = CreateFrame("Frame")
