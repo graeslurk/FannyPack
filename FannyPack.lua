@@ -158,6 +158,7 @@ local PROFILE_DEFAULTS = {
     perRow = 12, -- buttons per row before the bar wraps; 12 or more keeps one row
     order = {}, -- button keys from the first button on; filled in from ns.KINDS
     lowStock = {}, -- [button key] = warn at this many or fewer; unset: the kind's default
+    hideWhileOn = {}, -- [reminder: wellFed, elixir, scroll, weapon] = true: its buttons hide while the buff is on
     lowStockWarning = true, -- false: no count turns red, whatever the limits
     buttons = {}, -- [button key] = shown out of combat; filled in for the character's class
 }
@@ -460,37 +461,39 @@ for _, kind in ipairs(ns.KINDS) do
     if kind.list then SECOND[kind.list] = kind.key end
 end
 
--- The item picked by hand for a button, if it's in your bags.
-local function HandPicked(key, list)
+-- The item picked by hand for a button, if it's in your bags (and wanted:
+-- see ns.ItemFor).
+local function HandPicked(key, list, wanted)
     local chosen = charDB and charDB.chosen[key]
     if not chosen then return nil end
     for _, entry in ipairs(list) do
-        if entry.itemID == chosen then return entry end
+        if entry.itemID == chosen then return (not wanted or wanted(entry)) and entry or nil end
     end
 end
 
--- The best item other than skip, or with "use up low-level items first" on,
--- the lowest usable one.
-local function AutoPick(key, list, skip)
+-- The best wanted item other than skip, or with "use up low-level items
+-- first" on, the lowest usable one.
+local function AutoPick(key, list, skip, wanted)
+    local function ok(entry)
+        return entry ~= skip and (not wanted or wanted(entry))
+    end
     if db and db.preferLow[key] then
         local pick
         for _, entry in ipairs(list) do
-            if entry ~= skip and entry.usable and (not pick or Lower(entry, pick)) then pick = entry end
+            if ok(entry) and entry.usable and (not pick or Lower(entry, pick)) then pick = entry end
         end
         if pick then return pick end
     end
     for _, entry in ipairs(list) do
-        if entry ~= skip then return entry end
+        if ok(entry) then return entry end
     end
 end
 
-function ns.ItemFor(key)
+-- The item a button uses, among the wanted ones (all if wanted is nil).
+local function Pick(key, wanted)
     local kind = ns.KIND_BY_KEY[key]
-    if kind.combo then -- something to eat or drink, if either button has it
-        return ns.ItemFor(kind.combo[1]) or ns.ItemFor(kind.combo[2])
-    end
     local list = ns.ListFor(key)
-    local picked = HandPicked(key, list)
+    local picked = HandPicked(key, list, wanted)
 
     if kind.list then
         -- A second button (second elixir, off-hand poison) never uses the
@@ -498,14 +501,33 @@ function ns.ItemFor(key)
         -- elixir. Poisons may share, when picked so or there's no other.
         local first = ns.ItemFor(kind.list)
         if picked and (picked ~= first or kind.allowSame) then return picked end
-        return AutoPick(key, list, first) or (kind.allowSame and first or nil)
+        return AutoPick(key, list, first, wanted) or (kind.allowSame and first or nil)
     end
 
     if picked then return picked end
     -- What you picked by hand for the second button beats this button's
     -- automatic pick, unless there's nothing else.
-    local reserved = SECOND[key] and HandPicked(SECOND[key], list)
-    return AutoPick(key, list, reserved) or reserved
+    local reserved = SECOND[key] and HandPicked(SECOND[key], list, wanted)
+    return AutoPick(key, list, reserved, wanted) or reserved
+end
+
+-- With "Hide while on", these buttons skip items whose buff is already on
+-- you, so they show one you can still use; only with all of them on do they
+-- hide. Two elixirs with one drunk: Elixir shows the other, Second elixir hides.
+local SKIPS_ACTIVE = { elixir = "elixir", elixir2 = "elixir", scroll = "scroll" }
+
+function ns.ItemFor(key)
+    local kind = ns.KIND_BY_KEY[key]
+    if kind.combo then -- something to eat or drink, if either button has it
+        return ns.ItemFor(kind.combo[1]) or ns.ItemFor(kind.combo[2])
+    end
+    local reminder = SKIPS_ACTIVE[key]
+    if reminder and db and db.hideWhileOn[reminder] and ns.BuffIsOn then
+        local pick = Pick(key, function(entry) return not ns.BuffIsOn(key, entry.itemID) end)
+        if pick then return pick end
+        -- All of them are on: the usual pick, which then hides.
+    end
+    return Pick(key)
 end
 
 -- Total carried of a kind, for the minimap tooltip.
@@ -636,6 +658,12 @@ function ns.SetLowStock(key, value)
     db.lowStock[key] = math.max(0, math.min(99, value))
     ns.UpdateBar()
     if ns.RefreshWindow then ns.RefreshWindow() end -- set from the right-click list, it's on a page too
+end
+
+-- reminder: wellFed, elixir, scroll or weapon (as in ns.RUNNING_OUT).
+function ns.SetHideWhileOn(reminder, value)
+    db.hideWhileOn[reminder] = value and true or nil
+    ns.UpdateBar()
 end
 
 function ns.SetLowStockWarning(value)

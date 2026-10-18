@@ -453,6 +453,40 @@ local function WantsGlow(button, empty)
     return nil
 end
 
+-- "Hide while on": which reminder each button belongs to.
+local REMINDER_OF = {
+    buffFood = "wellFed", elixir = "elixir", elixir2 = "elixir", scroll = "scroll",
+    weapon = "weapon", poison = "weapon", poison2 = "weapon",
+}
+
+-- True while the buff a button is for is on you and not running out yet,
+-- the same moments its reminder glow is off. Weapons: every weapon you hold
+-- has a stone, oil or poison on it (or for a poison button, its own hand).
+local function BuffIsOn(key, itemID)
+    if key == "buffFood" then
+        return GlowFor(BuffTimeLeft(WELL_FED, "Well Fed"), ns.db.wellFedMinutes) == nil
+    elseif key == "weapon" then
+        return (HoldsWeapon(16) or HoldsWeapon(17)) and WeaponGlow(16) == nil and WeaponGlow(17) == nil
+    end
+    local slot = ns.KIND_BY_KEY[key].slot
+    if slot then
+        return HoldsWeapon(slot) and WeaponGlow(slot) == nil
+    end
+    local spell = itemID and GetItemSpell(itemID)
+    if not spell then return false end
+    local minutes = key == "scroll" and ns.db.scrollMinutes or ns.db.elixirMinutes
+    return GlowFor(AuraTimeLeft(spell), minutes) == nil
+end
+
+ns.BuffIsOn = BuffIsOn -- also used to pick an elixir or scroll that isn't on you yet
+
+-- Whether "Hide while on" keeps a button off the bar right now.
+local function HiddenWhileOn(key, itemID)
+    local reminder = REMINDER_OF[key]
+    if not reminder or not ns.db.hideWhileOn[reminder] then return false end
+    return BuffIsOn(key, itemID) and true or false
+end
+
 -- All glows pulse together, from one clock: a slow, eased fade between
 -- PULSE_LOW and PULSE_HIGH. Runs only while some button glows.
 local PULSE_PERIOD = 3.2 -- seconds for a fade in and out
@@ -785,7 +819,10 @@ local function SecureUpdate()
 
         -- Out of combat, in combat, or both (see LAYOUT).
         local outOfCombat, inCombatToo = db.buttons[key], ns.ShowsInCombat(key)
-        local show = ns.IsAvailable(key) and (outOfCombat or inCombatToo) and (entry ~= nil or not db.hideEmpty) or false
+        local hidden = entry ~= nil and HiddenWhileOn(key, entry.itemID)
+        button.hiddenWhileOn = hidden
+        local show = ns.IsAvailable(key) and (outOfCombat or inCombatToo) and (entry ~= nil or not db.hideEmpty)
+            and not hidden or false
         button:SetAttribute("fp-enabled", show)
         button:SetAttribute("fp-outofcombat", outOfCombat and true or false)
         button:SetAttribute("fp-incombat", inCombatToo and true or false)
@@ -1203,9 +1240,27 @@ events:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player") -- weapons swapped,
 pcall(events.RegisterEvent, events, "WEAPON_ENCHANT_CHANGED")
 -- A stone or oil wearing off doesn't always send an event, and Well Fed
 -- running low sends none, so look now and then.
+-- Buffs come, go and start running out without the bags changing, so check
+-- whether a "Hide while on" button should appear or go, and rearrange the
+-- bar if so. Not in combat, when the buttons can't change.
+local function CheckHideWhileOn()
+    if not bar or InCombatLockdown() or not next(ns.db.hideWhileOn) then return end
+    for key, button in pairs(buttons) do
+        local entry = ns.ItemFor(key)
+        local hidden = entry ~= nil and HiddenWhileOn(key, entry.itemID)
+        -- An elixir or scroll button may also switch to one that isn't on you.
+        local switched = REMINDER_OF[key] and entry and entry.itemID ~= button.itemID
+        if hidden ~= (button.hiddenWhileOn or false) or switched then
+            ns.UpdateBar()
+            return
+        end
+    end
+end
+
 C_Timer.NewTicker(10, function()
     if not bar then return end
     for _, button in pairs(buttons) do UpdateLook(button) end
+    CheckHideWhileOn()
 end)
 
 events:SetScript("OnEvent", function(_, event)
@@ -1244,5 +1299,6 @@ events:SetScript("OnEvent", function(_, event)
     elseif bar then
         -- Cooldowns, Recently Bandaged, and Well Fed and weapon stones for the reminders.
         for _, button in pairs(buttons) do UpdateLook(button) end
+        CheckHideWhileOn()
     end
 end)

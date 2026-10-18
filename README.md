@@ -52,6 +52,9 @@ target instead; with no target, or an enemy targeted, they still go on you.
   everyday food. It glows gold while you're not Well Fed, and silver when
   Well Fed is running out
 
+Turn on **Hide while on** for a reminder and its buttons stay off the bar
+while the buff is on you, coming back when it's gone or running out.
+
 The silver glow starts 2 minutes before a buff or weapon stone runs out. On
 the options' Reminders page you can set it separately for Well Fed (up to 15
 minutes), elixirs (60), scrolls (30) and weapons (30), or 0 for none.

@@ -759,13 +759,16 @@ local function CreateRemindersCard(parent)
     local card = CreateCard(parent, L["Reminders"], CARD_WIDTH)
     local intro = Text(card, 12, C.muted)
     intro:SetPoint("TOPLEFT", 20, -52)
-    intro:SetText(L["Buttons glow gold when their buff, or what's on your weapon, is missing, and silver this many minutes before it runs out (0: no silver)."])
+    intro:SetText(L["Buttons glow gold when their buff, or what's on your weapon, is missing, and silver this many minutes before it runs out (0: no silver). \"Hide while on\" keeps a button off the bar until then."])
 
     local SLIDER_WIDTH = 120
+    local GAP = 24 -- between the two switches, for their headings
     local sliderHeading = Text(card, 10, C.muted)
     sliderHeading:SetText(L["Running out"])
+    local hideHeading = Text(card, 10, C.muted)
+    hideHeading:SetText(L["Hide while on"])
     local onHeading = Text(card, 10, C.muted)
-    onHeading:SetText(L["On"])
+    onHeading:SetText(L["Glow"])
 
     local rows = {}
     for _, info in ipairs(REMINDERS) do
@@ -783,11 +786,20 @@ local function CreateRemindersCard(parent)
             if ns.RefreshWindow then ns.RefreshWindow() end -- dims the slider
         end)
         toggle:SetPoint("RIGHT", -8, 0)
+        local hide = CreateToggle(row, function() return ns.db.hideWhileOn[info.minutes] or false end,
+            function(value)
+                ns.SetHideWhileOn(info.minutes, value)
+                if ns.RefreshWindow then ns.RefreshWindow() end -- dims the slider
+            end)
+        hide:SetPoint("RIGHT", toggle, "LEFT", -GAP, 0)
         local slider = CreateSlider(row, 0, ns.RUNNING_OUT[info.minutes],
             function() return ns.db[info.minutes .. "Minutes"] end,
             function(value) ns.SetRunningOut(info.minutes, value) end, SLIDER_WIDTH)
-        slider:SetPoint("RIGHT", toggle, "LEFT", -16, 0)
-        updaters[#updaters + 1] = function() slider:SetAlpha(ns.db[info.setting] and 1 or 0.4) end
+        slider:SetPoint("RIGHT", hide, "LEFT", -16, 0)
+        -- The "running out" time matters for the glow and for hiding.
+        updaters[#updaters + 1] = function()
+            slider:SetAlpha((ns.db[info.setting] or ns.db.hideWhileOn[info.minutes]) and 1 or 0.4)
+        end
 
         local name = Text(row, 14, C.text)
         name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
@@ -801,12 +813,14 @@ local function CreateRemindersCard(parent)
         self:SetWidth(width)
         intro:SetWidth(width - 40)
         local headings = -52 - intro:GetStringHeight() - 12
-        -- Over the switch (8 inside the row, which is 20 inside the card) and
-        -- the slider's track, which ends 40 before its value.
+        -- Over the switches (the right one 8 inside the row, which is 20
+        -- inside the card) and the slider's track, which ends 40 before its value.
         onHeading:ClearAllPoints()
         onHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 24, headings)
+        hideHeading:ClearAllPoints()
+        hideHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 48 - GAP - 24, headings)
         sliderHeading:ClearAllPoints()
-        sliderHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 48 - 16 - 40 - SLIDER_WIDTH / 2, headings)
+        sliderHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 48 - GAP - 48 - 16 - 40 - SLIDER_WIDTH / 2, headings)
         local top = headings - onHeading:GetStringHeight() - 6
         for i, row in ipairs(rows) do
             row:SetWidth(width - 40)

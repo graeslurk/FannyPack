@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0
+
+New:
+- **Hide while on**: buff food, elixir, scroll and weapon stone, oil and poison buttons can stay off the bar while their buff is on you, and come back when it's gone or running out (glowing silver, ready to refresh). Elixir and scroll buttons first switch to one you carry whose buff isn't on you yet, and only hide when all of them are on. A switch per reminder on the Reminders page, off by default. The game doesn't let addons show or hide buttons in a fight, so changes during combat wait until it ends
+
 ## 1.2.1
 
 Fixed:
