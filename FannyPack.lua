@@ -129,7 +129,9 @@ end
 
 -- Whether this character gets a button: some are for one class only.
 function ns.IsAvailable(key)
-    local class = ns.KIND_BY_KEY[key].class
+    local kind = ns.KIND_BY_KEY[key]
+    if not kind then return false end -- a deleted custom button
+    local class = kind.class
     return not class or class == select(2, UnitClass("player"))
 end
 
@@ -424,6 +426,9 @@ end
 -- The kind of button an item belongs on, or nil. Items the game hasn't
 -- loaded yet are requested and get sorted on the next scan.
 local function Classify(itemID)
+    -- Items you put on a custom button go there, whatever they are.
+    local custom = ns.customItems and ns.customItems[itemID]
+    if custom then return custom end
     local cached = itemKinds[itemID]
     if cached ~= nil then return cached or nil end
 
@@ -620,6 +625,19 @@ local function CampFirst(a, b)
     return a.itemID < b.itemID
 end
 
+-- Custom buttons: items you can use first, then in the order of the
+-- button's list (Custom.lua).
+local function YourOrder(kind)
+    local rank = {}
+    for i, itemID in ipairs(kind.items) do rank[itemID] = i end
+    return function(a, b)
+        if a.usable ~= b.usable then return a.usable end
+        local x, y = rank[a.itemID] or math.huge, rank[b.itemID] or math.huge
+        if x ~= y then return x < y end
+        return a.itemID < b.itemID
+    end
+end
+
 local retries = 0
 
 function ns.Scan()
@@ -675,7 +693,14 @@ function ns.Scan()
             })
         end
     end
-    for key, list in pairs(ns.items) do table.sort(list, key == "camp" and CampFirst or Better) end
+    for key, list in pairs(ns.items) do
+        local kind = ns.KIND_BY_KEY[key]
+        if kind.custom then
+            table.sort(list, YourOrder(kind))
+        else
+            table.sort(list, key == "camp" and CampFirst or Better)
+        end
+    end
     for _, list in pairs(ns.hiddenItems) do
         table.sort(list, function(a, b) return a.name < b.name end)
     end
@@ -822,13 +847,13 @@ function ns.SetHideEmpty(value)
 end
 
 -- Whether a button stays on the bar in combat. Food and drink don't by
--- default, since you can't eat or drink in a fight.
+-- default, since you can't eat or drink in a fight. A deleted custom button
+-- (its row in the options may still ask) doesn't.
 function ns.ShowsInCombat(key)
+    local kind = ns.KIND_BY_KEY[key]
+    if not kind then return false end
     local shown = db.combat[key]
-    if shown == nil then
-        local kind = ns.KIND_BY_KEY[key]
-        return not (kind.eating or kind.noCombat)
-    end
+    if shown == nil then return not (kind.eating or kind.noCombat) end
     return shown
 end
 
@@ -938,7 +963,8 @@ end
 
 -- The count turns red at this many or fewer; 0 is no warning.
 function ns.LowStock(key)
-    return db.lowStock[key] or ns.KIND_BY_KEY[key].lowStock or 0
+    local kind = ns.KIND_BY_KEY[key]
+    return db.lowStock[key] or (kind and kind.lowStock) or 0
 end
 
 function ns.SetLowStock(key, value)
@@ -1133,6 +1159,13 @@ function ns.ShowDebugReport(retry)
     out("")
     local loading = ShowDebug(out)
     out("")
+    if ns.CustomButtons and #ns.CustomButtons() > 0 then
+        out("Custom buttons (key: item IDs, first used first):")
+        for _, def in ipairs(ns.CustomButtons()) do
+            out(("  %s (%s): %s"):format(def.name, def.key, #def.items > 0 and table.concat(def.items, ", ") or "none"))
+        end
+        out("")
+    end
     if ns.AuraDebug then
         ns.AuraDebug(out)
         out("")
@@ -1263,6 +1296,7 @@ local function FillProfile(profile)
         profile.separateCombat = true
     end
 end
+ns.FillProfile = FillProfile -- also when a custom button is made (Custom.lua)
 
 local function LoadProfile(name)
     local profile = account.profiles[name] or {}
@@ -1297,9 +1331,11 @@ local function LoadSettings()
 
     charDB.chosen = charDB.chosen or {}
     charDB.macros = charDB.macros or {} -- [button key] = true: keep a macro for it (Macros.lua)
+    charDB.macroNames = charDB.macroNames or {} -- [button key] = the name its macro was given
     characterKey = UnitName("player") .. " - " .. GetRealmName()
-    LoadProfile(account.profileKeys[characterKey] or DEFAULT_PROFILE)
     ns.account, ns.charDB = account, charDB
+    ns.RegisterCustomKinds() -- before the profile, which fills in their settings
+    LoadProfile(account.profileKeys[characterKey] or DEFAULT_PROFILE)
 end
 
 ------------------------------------------------------------------------

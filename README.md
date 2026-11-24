@@ -96,6 +96,20 @@ for any button. Fanny Pack keeps it using the item that button would use, so
 you can drag it onto Bartender, Dominos or the game's bars and still get the
 best food, potion or bandage.
 
+**Make your own buttons** on the options' Custom page, for any items you
+like: raid potions, Holy Water, a trinket, a fishing pole. Name the button
+and add items by dragging them from your bags, Shift-clicking them or typing
+a name or ID; you can also drop an item from your bags straight onto a
+custom button on the bar. It uses the first item in its list that you carry
+(drag the items to sort them), and an item on a custom button leaves its
+usual button, so you can give Free Action Potions a button of their own.
+For items that give you a buff, like juju or a flask, turn on **Glow while
+its buff is missing** on the button's card.
+Custom buttons are shared by all your characters; each profile turns them on
+or off and sorts them on the Buttons page, like the other buttons. Their key
+bindings are set by hovering (`/fannypack bind`), not in the game's Key
+Bindings.
+
 **Hide items** you don't want on any button, like a flask you're saving
 for a raid: click the small **x** next to it in a button's right-click
 list. No button uses it from then on. Hidden items are listed under
@@ -150,6 +164,9 @@ Type `/fannypack` (or click the minimap button) to open the options.
 - **Shape**: square, rounded or round
 - **Border**: none, or a thin silver or gold line
 - **Button size** and **spacing**
+- **Masque**: with the Masque addon installed, pick a skin for the "Fanny
+  Pack" group in Masque's options (`/msq`) and the buttons match your action
+  bars. The skin then decides the shape and border
 - **Fade out of combat**: the bar disappears outside combat and comes back
   when you hover over it or a fight starts. A glowing reminder stays visible
 - The buff food and weapon **reminders** can each be turned off
@@ -162,8 +179,8 @@ Type `/fannypack` (or click the minimap button) to open the options.
   reset and delete them in the options, or type `/fannypack profile <name>`
   (handy in a macro)
 
-The options are split into pages (Buttons, Items, Bar, Look, Reminders and
-Profiles), and the window can be resized to fit small screens. After an
+The options are split into pages (Buttons, Custom, Items, Bar, Look,
+Reminders and Profiles), and the window can be resized to fit small screens. After an
 update with new features, a line in chat and a card at the top of the
 options say what's new (the chat line can be turned off). On your first
 login, a short tour beside the bar shows you around; `/fannypack tour` plays

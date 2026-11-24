@@ -703,10 +703,12 @@ local function WantsGlow(button, empty)
         return ns.db.weaponGlow and WeaponGlow(button.kind.slot) or nil
     elseif button.kind.buff then
         -- The buff is named like the item's use effect, e.g. "Elixir of the
-        -- Mongoose" or "Stamina" for a Scroll of Stamina.
-        if not ns.db[GLOW_SETTING[key]] or not button.itemID then return nil end
+        -- Mongoose" or "Stamina" for a Scroll of Stamina. A custom button
+        -- with its glow on (Custom.lua) goes by the Other buffs timing.
+        local custom = button.kind.custom
+        if not button.itemID or (not custom and not ns.db[GLOW_SETTING[key]]) then return nil end
         local spell = GetItemSpell(button.itemID)
-        local minutes = ns.db[MINUTES_SETTING[key] or "elixirMinutes"]
+        local minutes = ns.db[MINUTES_SETTING[key] or (custom and "otherBuffMinutes") or "elixirMinutes"]
         return spell and GlowFor(AuraTimeLeft(spell), minutes) or nil
     end
     return nil
@@ -932,26 +934,42 @@ local function PixelSize(frame)
     return 768 / height / frame:GetEffectiveScale()
 end
 
--- Shape and border. Safe in combat.
+-- Shape and border, or with a Masque skin on (Skin.lua) neither: the skin
+-- draws the frame and places the icon, highlight, pressed look, cooldown,
+-- count and key. Safe in combat.
 local function ApplyStyle(button)
     local db = ns.db
-    local maskFile = SHAPE_MASKS[db.shape]
+    local skinned = ns.Skinned and ns.Skinned(button)
+    local maskFile = not skinned and SHAPE_MASKS[db.shape] or nil
     local border = BORDERS[db.border]
+    local shaped = { button.icon, button:GetHighlightTexture(), button:GetPushedTexture() }
 
-    -- The border is the button's shape in the border colour, behind the icon.
-    if maskFile then
-        button.border:SetTexture(MEDIA .. maskFile)
+    if skinned then
+        button.border:Hide()
     else
-        button.border:SetColorTexture(1, 1, 1, 1)
+        if ns.HideSkin then ns.HideSkin(button) end -- the skin's frame, while Masque's group is off
+        -- The border is the button's shape in the border colour, behind the icon.
+        button.border:Show()
+        if maskFile then
+            button.border:SetTexture(MEDIA .. maskFile)
+        else
+            button.border:SetColorTexture(1, 1, 1, 1)
+        end
+        button.border:SetVertexColor(unpack(border and border.color or { 0, 0, 0, 0 }))
+        local inset = border and border.pixels * PixelSize(button) or 0
+        button.icon:ClearAllPoints()
+        button.icon:SetPoint("TOPLEFT", inset, -inset)
+        button.icon:SetPoint("BOTTOMRIGHT", -inset, inset)
+        -- Back over the icon, in case a skin placed them elsewhere.
+        for i = 2, 3 do
+            shaped[i]:ClearAllPoints()
+            shaped[i]:SetAllPoints(button.icon)
+        end
+        button.cooldown:ClearAllPoints()
+        button.cooldown:SetAllPoints(button.icon)
     end
-    button.border:SetVertexColor(unpack(border and border.color or { 0, 0, 0, 0 }))
-    local inset = border and border.pixels * PixelSize(button) or 0
-    button.icon:ClearAllPoints()
-    button.icon:SetPoint("TOPLEFT", inset, -inset)
-    button.icon:SetPoint("BOTTOMRIGHT", -inset, inset)
 
     -- The mask cuts the icon, highlight and pressed look to shape.
-    local shaped = { button.icon, button:GetHighlightTexture(), button:GetPushedTexture() }
     if maskFile then
         button.mask:SetTexture(MEDIA .. maskFile, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
         if not button.masked then
@@ -962,9 +980,11 @@ local function ApplyStyle(button)
         for _, texture in ipairs(shaped) do texture:RemoveMaskTexture(button.mask) end
         button.masked = false
     end
-    button.cooldown:SetSwipeTexture(maskFile and MEDIA .. maskFile or "Interface\\Buttons\\WHITE8x8")
-    button.cooldown:SetSwipeColor(0, 0, 0, 0.75)
-    if button.cooldown.SetUseCircularEdge then button.cooldown:SetUseCircularEdge(db.shape == "round") end
+    if not skinned then
+        button.cooldown:SetSwipeTexture(maskFile and MEDIA .. maskFile or "Interface\\Buttons\\WHITE8x8")
+        button.cooldown:SetSwipeColor(0, 0, 0, 0.75)
+        if button.cooldown.SetUseCircularEdge then button.cooldown:SetUseCircularEdge(db.shape == "round") end
+    end
 
     -- Text sized to the button, outlined to read on any background.
     local size = db.buttonSize
@@ -974,7 +994,8 @@ local function ApplyStyle(button)
     countdownFont:SetFont(NUMBER_FONT, math.max(10, math.floor(size * 0.5 + 0.5)), "OUTLINE")
     if button.cooldown.SetCountdownFont then button.cooldown:SetCountdownFont("FannyPackCountdownFont") end
 
-    button.glow:SetTexture(MEDIA .. "glow-" .. db.shape)
+    -- A skin's frame is near enough square for the glows.
+    button.glow:SetTexture(MEDIA .. "glow-" .. (skinned and "square" or db.shape))
     button.glow:SetSize(db.buttonSize * 2, db.buttonSize * 2) -- the button covers its middle half
     -- The border glow: the button's shape, a few pixels bigger, behind it.
     if maskFile then
@@ -1123,6 +1144,9 @@ local function ShowButtonTooltip(self)
         GameTooltip:AddLine(L["Click to put it on your off-hand weapon."], 0.6, 0.6, 0.6, true)
     end
     GameTooltip:AddLine(L["Right-click to choose another item, or hide one."], 0.6, 0.6, 0.6, true)
+    if self.kind.custom then
+        GameTooltip:AddLine(L["Your own button: drop an item from your bags on it to add it."], 0.6, 0.6, 0.6, true)
+    end
     GameTooltip:Show()
 end
 
@@ -1184,6 +1208,8 @@ function ns.CreateGlowPreview(parent)
         local sample = CreateFrame("Button", nil, holder)
         sample.kind = ns.KIND_BY_KEY.buffFood
         AddButtonParts(sample)
+        sample:SetSize(ns.db.buttonSize, ns.db.buttonSize)
+        if ns.SkinButton then ns.SkinButton(sample) end -- shows the glow on the Masque skin too
         sample.icon:SetTexture(ns.KindIcon(ns.KIND_BY_KEY[i == 1 and "buffFood" or "elixir"]))
         sample:EnableMouse(false)
         sample.color = color
@@ -1193,8 +1219,9 @@ function ns.CreateGlowPreview(parent)
         local size = ns.db.buttonSize
         self:SetSize(size * 2 + 24, size + 16)
         for i, sample in ipairs(self.samples) do
-            ApplyStyle(sample)
             sample:SetSize(size, size)
+            ApplyStyle(sample)
+            if ns.FitSkin then ns.FitSkin(sample) end
             sample:ClearAllPoints()
             sample:SetPoint("LEFT", (i - 1) * (size + 24) + 8, 0)
             ShowGlow(sample, sample.color)
@@ -1214,6 +1241,8 @@ local function CreateItemButton(kind)
     -- counts, is set in SecureUpdate.
     AddButtonParts(button)
     button.cooldown:SetScript("OnCooldownDone", function() UpdateLook(button) end)
+    button:SetSize(ns.db.buttonSize, ns.db.buttonSize)
+    if ns.SkinButton then ns.SkinButton(button) end
     ApplyStyle(button)
 
     -- Camp gear: a click opens its row, a right-click its list.
@@ -1231,7 +1260,36 @@ local function CreateItemButton(kind)
     button:SetAttribute("fp-enabled", false)
     button:SetScript("OnEnter", ShowButtonTooltip)
     button:SetScript("OnLeave", GameTooltip_Hide)
+    -- Custom buttons: drop an item from your bags on one to add it.
+    if kind.custom then
+        button:SetScript("OnReceiveDrag", function(self)
+            local what, itemID = GetCursorInfo()
+            if what ~= "item" or not itemID then return end
+            ClearCursor()
+            local ok, why = ns.AddCustomItem(self.kind.key, itemID)
+            if not ok and why then ns.Refuse(why) end
+        end)
+    end
     return button
+end
+
+-- A custom button made while you play (Custom.lua). Not in combat.
+function ns.AddBarButton(kind)
+    if not bar or buttons[kind.key] or InCombatLockdown() then return end
+    buttons[kind.key] = CreateItemButton(kind)
+end
+
+-- A custom button deleted: off the bar for good. Its frame stays, hidden
+-- (the game can't delete frames); its key is never used again.
+function ns.RemoveBarButton(key)
+    local button = buttons[key]
+    if not button or InCombatLockdown() then return end
+    if picker and picker.owner == button then picker:Hide() end
+    if ns.UnskinButton then ns.UnskinButton(button) end
+    button:SetAttribute("fp-enabled", false)
+    button:Hide()
+    glowFrames[button] = nil
+    buttons[key] = nil
 end
 
 -- Like the action bars, the buttons act on the half of a click the game's
@@ -1458,6 +1516,8 @@ local function GetSlot(i)
     slot = CreateFrame("Button", nil, flyout, "SecureActionButtonTemplate")
     slot.kind = flyout.owner.kind
     AddButtonParts(slot)
+    slot:SetSize(ns.db.buttonSize, ns.db.buttonSize)
+    if ns.SkinButton then ns.SkinButton(slot) end
     slot.cooldown:SetScript("OnCooldownDone", function() UpdateSlot(slot) end)
     slot:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1492,6 +1552,7 @@ local function RefreshFlyout()
         slot:ClearAllPoints()
         slot:SetPoint("TOPLEFT", FLYOUT_PADDING + (i - 1) * (size + spacing), -FLYOUT_PADDING)
         ApplyStyle(slot)
+        if ns.FitSkin then ns.FitSkin(slot) end
         slot.hotkey:SetText("")
         UpdateSlot(slot)
         slot:Show()
@@ -1555,6 +1616,7 @@ function ns.UpdateBar()
     ns.UpdateFade()
     for _, button in pairs(buttons) do
         ApplyStyle(button)
+        if ns.FitSkin then ns.FitSkin(button) end -- after a change of Button size
         UpdateLook(button)
         UpdateHotkey(button)
     end
@@ -1792,9 +1854,13 @@ local function GetRow(i)
     row.hide:SetScript("OnClick", function() ns.SetHidden(row.itemID, true) end)
 
     -- An item: use it on this button. A hidden one: show it again. Camp
-    -- gear only lists its items (they're used from the row).
+    -- gear only lists its items (they're used from the row). A custom
+    -- button's last row opens its card in the options.
     row:SetScript("OnClick", function(self)
-        if self.unhide then
+        if self.edit then
+            picker:Hide()
+            ns.ShowCustomButton(picker.owner.kind.key)
+        elseif self.unhide then
             ns.SetHidden(self.itemID, false)
         elseif not picker.owner.kind.flyout then
             ns.SetChoice(picker.owner.kind.key, self.itemID)
@@ -1924,12 +1990,14 @@ function ns.RefreshPicker()
     picker.title:SetText(kind.name:upper())
 
     local count, width = 0, picker.title:GetStringWidth() + 28
-    -- mode: "item" (has the hide x) or "hidden" (click to show it again).
+    -- mode: "item" (has the hide x), "hidden" (click to show it again) or
+    -- "edit" (a custom button's items in the options).
     local function Add(itemID, icon, name, countText, enabled, selected, mode)
         count = count + 1
         local row = GetRow(count)
         row.itemID = itemID
         row.unhide = mode == "hidden"
+        row.edit = mode == "edit"
         row.hide:SetShown(mode == "item")
         row.count:ClearAllPoints()
         if mode == "item" then
@@ -1964,7 +2032,10 @@ function ns.RefreshPicker()
     elseif #list == 0 then
         Add(nil, nil, "|cff8a8b93" .. L["None in your bags."] .. "|r", "", false, false)
     else
-        if not listOnly then Add(nil, list[1].icon, L["Best available"], "", true, not usingChoice) end
+        if not listOnly then
+            Add(nil, list[1].icon, kind.custom and L["First in your list"] or L["Best available"], "", true,
+                not usingChoice)
+        end
         for _, entry in ipairs(list) do
             local name = entry.name
             local color = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[entry.quality]
@@ -1983,6 +2054,10 @@ function ns.RefreshPicker()
             Add(entry.itemID, entry.icon, "|cff808080" .. entry.name .. "|r", L["show"], true, false, "hidden")
         end
     end
+    if kind.custom then
+        local green = ("|cff%02x%02x%02x"):format(C.accent[1] * 255, C.accent[2] * 255, C.accent[3] * 255)
+        Add(nil, nil, green .. L["Change its items..."] .. "|r", "", true, false, "edit")
+    end
     for i = count + 1, #picker.rows do picker.rows[i]:Hide() end
 
     local lowStock = ns.LowStock(kind.key)
@@ -1991,11 +2066,13 @@ function ns.RefreshPicker()
     picker.footer.minus:SetAlpha(lowStock > 0 and 1 or 0.4)
 
     -- Eat & drink picks nothing itself: its items come from Food and Drink.
-    -- Camp gear has neither a pick nor a count.
+    -- Camp gear has neither a pick nor a count. Custom buttons go by your
+    -- list, not by level.
+    local noPrefer = kind.combo or listOnly or kind.custom
     picker.footer:SetShown(not listOnly)
-    picker.prefer:SetShown(not kind.combo and not listOnly)
+    picker.prefer:SetShown(not noPrefer)
     picker.prefer.toggle:Update(true)
-    local preferHeight = (kind.combo or listOnly) and 0 or PREFER_HEIGHT
+    local preferHeight = noPrefer and 0 or PREFER_HEIGHT
     local footerHeight = listOnly and 0 or FOOTER_HEIGHT
 
     picker:SetSize(math.max(260, width), 30 + count * ROW_HEIGHT + 6 + preferHeight + footerHeight)

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.1
+
+1.8.0 was published by mistake without its new features; this is the release it should have been.
+
+New:
+- **Custom buttons**: make your own buttons, like AutoBar's custom categories, for any items you like: raid potions, Holy Water, a trinket, a fishing pole. On the new **Custom** page, name a button and add items by dragging them from your bags, Shift-clicking them or typing a name or ID. A button uses the first item in its list that you carry; drag the items to sort them, or right-click the button to pick another item. You can also drop an item from your bags straight onto a custom button on the bar. An item on a custom button leaves its usual button, so you can give, say, Free Action Potions a button of their own. Your custom buttons are shared by all your characters, and like the other buttons each profile turns them on or off and sorts them on the Buttons page. They get a count, a cooldown, a low-stock warning, a macro for your action bars and a hover key binding (`/fannypack bind`) like the other buttons. Turn on **Glow while its buff is missing** for a button of items that give you a buff, like juju or a flask: it glows like Other buffs, silver when the buff runs low
+- **Masque support**: with the Masque addon installed, Fanny Pack's buttons (the bar, the camp gear row and the glow preview) are a Masque group called "Fanny Pack", and wear the skin you pick for it in Masque's options (`/msq`), like your action bars. While a skin is on, the Look page's Shape and Border step aside for it; turn the group off in Masque to get Fanny Pack's own look back
+
+Changed:
+- **Smoother dragging** on the Buttons page: a row now moves the moment you press on it and stays right under the pointer, instead of starting late and trailing behind it
+
 ## 1.7.0
 
 New:
