@@ -427,6 +427,12 @@ local function Classify(itemID)
     local cached = itemKinds[itemID]
     if cached ~= nil then return cached or nil end
 
+    -- Forever can report a mana gem as Armor (e.g. Mana Agate, item 5514).
+    if MANA_GEMS[itemID] then
+        itemKinds[itemID] = "manaGem"
+        return "manaGem"
+    end
+
     local classID, subClassID = select(6, C_Item.GetItemInfoInstant(itemID))
     if classID ~= CONSUMABLE then
         -- Only cures and camp gear get a button among the other items you can use.
@@ -458,7 +464,7 @@ local function Classify(itemID)
     end
     local listed = (HEALTHSTONES[itemID] and "healthstone") or (WEAPON_ITEMS[itemID] and "weapon")
         or (POISONS[itemID] and "poison") or (SCROLLS[itemID] and "scroll")
-        or (RUNES[itemID] and "rune") or (MANA_GEMS[itemID] and "manaGem")
+        or (RUNES[itemID] and "rune")
     if listed then
         itemKinds[itemID] = listed
         return listed
@@ -495,16 +501,17 @@ local function Classify(itemID)
         -- The names catch healthstones, stones, oils and poisons newer than
         -- the lists, and elixirs and flasks the game files as plain
         -- consumables. Elixirs go first, for Elixir of Poison Resistance.
+        local paddedName = " " .. name .. " " -- some locales match whole words
         if name:find(L["healthstone"], 1, true) then
             key = "healthstone"
-        elseif ELIXIR_SUBCLASSES[subClassID] or name:find(L["elixir"], 1, true) or name:find(L["flask"], 1, true) then
+        elseif ELIXIR_SUBCLASSES[subClassID] or name:find(L["elixir"], 1, true) or paddedName:find(L["flask"], 1, true) then
             key = "elixir"
         elseif subClassID == SCROLL_SUBCLASS or name:find(L["scroll of"], 1, true) then
             key = "scroll"
         elseif name:find(L["sharpening stone"], 1, true) or name:find(L["weightstone"], 1, true)
             or name:find(L["wizard oil"], 1, true) or name:find(L["mana oil"], 1, true) then
             key = "weapon"
-        elseif name:find(L["poison"], 1, true) then
+        elseif paddedName:find(L["poison"], 1, true) then
             key = "poison"
         elseif name:find(L["demonic rune"], 1, true) or name:find(L["dark rune"], 1, true) then
             key = "rune"
@@ -526,7 +533,10 @@ local function Classify(itemID)
         -- Anything else whose use effect raises a stat for a while ("Increases
         -- Stamina by 15 for 15 min."): Rumsey Rum, juju, fishing finds.
         local line = UseLine(itemID) or "" -- loaded: the Well Fed check needed it
-        if line:find(L["increases"], 1, true) and (line:find(L["%d+ min"]) or line:find(L["%d+ hour"])) then
+        local alternateIncrease = rawget(L, "increases (alternate)")
+        local raisesStat = line:find(L["increases"], 1, true)
+            or (alternateIncrease and line:find(alternateIncrease, 1, true))
+        if raisesStat and (line:find(L["%d+ min"]) or line:find(L["%d+ hour"])) then
             key = "otherBuff"
         end
     end

@@ -1,12 +1,41 @@
 local _, ns = ...
 
 ns.AddTranslations("ruRU", {
+    -- Lowercase fragments from Forever's ruRU item names, use text and auras.
     -- Match the item tooltip ("персонаж насыщается"), not the aura name ("Сытость").
     ["well fed"] = "насыщается",
+    ["anti-venom"] = "противоядие",
+    ["poultice"] = "компресс",
+    ["tourniquet"] = "жгут",
+    ["healthstone"] = "камень здоровья",
+    ["elixir"] = "эликсир",
+    ["flask"] = " настой ", -- exclude "настойка"
+    ["potion"] = "зелье",
+    ["scroll of"] = "свиток ",
+    ["poison"] = " яд ", -- a whole word, so e.g. "заряд" doesn't match
+    ["sharpening stone"] = "точило",
+    ["weightstone"] = "грузило",
+    ["wizard oil"] = "волшебное масло",
+    ["mana oil"] = "масло маны",
+    ["demonic rune"] = "демоническая руна",
+    ["dark rune"] = "темная руна",
+    ["camp "] = "лагерн", -- the shared prefix of "Лагерная палатка" and "Лагерный стул"
+    ["campfire"] = "костр", -- "костра" in kit names and "костром" in tooltips
+    ["camping"] = "походные предметы",
+    ["camp feature"] = "объектов в лагере",
+    ["teaches you"] = "обучает",
+    ["increases"] = "повыш", -- e.g. "Повышение" in Rumsey Rum Black Label (21151)
+    ["increases (alternate)"] = "увелич", -- e.g. "Увеличение" in Juju Power (12451)
+    ["%d+ min"] = "%d+ мин",
+    ["%d+ hour"] = "%d+ ч%.",
+    ["bleed"] = "кровотечение",
 
     -- Button names (also used by the key bindings).
     ["Healthstone"] = "Камень здоровья",
     ["Bandages"] = "Бинты",
+    ["Anti-venom"] = "Противоядие",
+    ["Poultice"] = "Компресс",
+    ["Tourniquet"] = "Жгут",
     ["Health potion"] = "Лечебное зелье",
     ["Mana potion"] = "Зелье маны",
     ["Rune"] = "Руна",
@@ -15,6 +44,7 @@ ns.AddTranslations("ruRU", {
     ["Elixir"] = "Эликсир",
     ["Second elixir"] = "Второй эликсир",
     ["Scroll"] = "Свиток",
+    ["Other buffs"] = "Другие усиления",
     ["Weapon stone or oil"] = "Камень или масло для оружия",
     ["Main-hand poison"] = "Яд для правой руки",
     ["Off-hand poison"] = "Яд для левой руки",
@@ -22,6 +52,7 @@ ns.AddTranslations("ruRU", {
     ["Drink"] = "Напитки",
     ["Eat & drink"] = "Еда и питьё",
     ["Buff food"] = "Еда с усилением",
+    ["Camp gear"] = "Снаряжение для лагеря",
 
     -- Item tooltips and picker.
     ["None in your bags."] = "В сумках ничего нет.",
