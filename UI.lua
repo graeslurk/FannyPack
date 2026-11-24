@@ -475,6 +475,7 @@ local function CreateCard(parent, title, width)
     local label = Text(card, 13, C.text)
     label:SetPoint("LEFT", bar, "RIGHT", 10, 0)
     label:SetText(title:upper())
+    card.title = label -- a custom button's card follows its name
 
     card.rows = {}
     return card
@@ -659,6 +660,24 @@ local function CreateBarCard(parent)
     return card
 end
 
+-- Dragging rows to sort them (the Buttons page, and a custom button's
+-- items). A row is picked up as soon as the mouse button goes down and
+-- dropped when it comes up, not when the game decides a drag has begun
+-- (after the mouse has moved a few pixels): that way the row moves at once
+-- and stays under the pointer where it was grabbed.
+-- startDrag(row) and stopDrag(row) are the list's own.
+local function MakeRowDraggable(row, startDrag, stopDrag, onMouseUp)
+    row:SetScript("OnMouseDown", function(self, button)
+        -- An item on the cursor is being dropped here, not a row picked up.
+        if button == "LeftButton" and not GetCursorInfo() then startDrag(self) end
+    end)
+    row:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then stopDrag(self) end
+        if onMouseUp then onMouseUp(self, button) end
+    end)
+    row:SetScript("OnHide", stopDrag) -- the window closed mid-drag
+end
+
 -- The buttons in bar order, each with its icon, name, arrows to move it
 -- and an on/off switch.
 local function CreateButtonsCard(parent)
@@ -697,11 +716,9 @@ local function CreateButtonsCard(parent)
     combatHeading:SetJustifyH("CENTER")
     combatHeading:SetText(L["In combat"])
 
-    -- Only the buttons this character gets (poisons are for rogues).
+    -- Only the buttons this character gets (poisons are for rogues). Filled
+    -- in by Sync, as custom buttons come and go.
     local rows, shown = {}, {}
-    for _, kind in ipairs(ns.KINDS) do
-        if ns.IsAvailable(kind.key) then shown[#shown + 1] = kind end
-    end
 
     local ROW_HEIGHT, ROW_STEP = 28, 32
     local dragged, dropAt -- the row being dragged, and the place it would land (1 = first)
@@ -730,7 +747,14 @@ local function CreateButtonsCard(parent)
         return y / card:GetEffectiveScale()
     end
 
+    local StopDrag
+
     local function DragUpdate(row, elapsed)
+        -- Let go somewhere the row didn't hear about it.
+        if not IsMouseButtonDown("LeftButton") then
+            StopDrag(row)
+            return
+        end
         local scroll = card:GetParent():GetParent()
         local y = CursorY()
         if scroll and scroll.GetVerticalScrollRange then
@@ -756,20 +780,30 @@ local function CreateButtonsCard(parent)
     end
 
     local function StartDrag(row)
-        dragged, dropAt = row, nil
+        if not top or dragged then return end
+        -- Where it is now: letting go there moves nothing.
+        row.startAt = nil
+        local i = 0
+        for _, key in ipairs(ns.Order()) do
+            if rows[key] then
+                i = i + 1
+                if rows[key] == row then row.startAt = i end
+            end
+        end
+        dragged, dropAt = row, row.startAt
         row.grabOffset = row:GetTop() - CursorY()
         row:SetFrameLevel(card:GetFrameLevel() + 20)
         SetColor(row.bg, C.controlHover)
         row:SetScript("OnUpdate", DragUpdate)
     end
 
-    local function StopDrag(row)
+    function StopDrag(row)
         if dragged ~= row then return end
         row:SetScript("OnUpdate", nil)
         row:SetFrameLevel(card:GetFrameLevel() + 1)
         SetColor(row.bg, C.control)
-        if not dropAt then -- let go before it moved
-            dragged = nil
+        if not dropAt or dropAt == row.startAt then -- let go where it was
+            dragged, dropAt = nil, nil
             Layout()
             return
         end
@@ -794,16 +828,13 @@ local function CreateButtonsCard(parent)
         Layout()
     end
 
-    for _, kind in ipairs(shown) do
+    local function MakeRow(kind)
         local row = CreateFrame("Frame", nil, card)
         row:SetSize(rowWidth, ROW_HEIGHT)
         row.key = kind.key
         row.bg = Rounded(row, "BACKGROUND", C.control)
         row:EnableMouse(true)
-        row:RegisterForDrag("LeftButton")
-        row:SetScript("OnDragStart", StartDrag)
-        row:SetScript("OnDragStop", StopDrag)
-        row:SetScript("OnHide", StopDrag) -- the window closed mid-drag
+        MakeRowDraggable(row, StartDrag, StopDrag)
 
         -- A grip of six dots on the left: the row can be dragged.
         for dot = 0, 5 do
@@ -816,8 +847,8 @@ local function CreateButtonsCard(parent)
         local icon = row:CreateTexture(nil, "ARTWORK")
         icon:SetSize(22, 22)
         icon:SetPoint("LEFT", 24, 0) -- clear of the grip
-        icon:SetTexture(ns.KindIcon(kind))
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.icon = icon
 
         local toggle = CreateToggle(row, function() return ns.db.buttons[kind.key] end, function(value)
             ns.SetButtonShown(kind.key, value)
@@ -836,10 +867,33 @@ local function CreateButtonsCard(parent)
         name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
         name:SetPoint("RIGHT", row.up, "LEFT", -6, 0)
         name:SetWordWrap(false)
-        name:SetText(kind.name)
+        row.name = name
 
         rows[kind.key] = row
+        return row
     end
+
+    -- The rows follow the buttons: custom buttons are made, renamed and
+    -- deleted while the window is open.
+    local function Sync()
+        wipe(shown)
+        for _, kind in ipairs(ns.KINDS) do
+            if ns.IsAvailable(kind.key) then
+                shown[#shown + 1] = kind
+                local row = rows[kind.key] or MakeRow(kind)
+                row.icon:SetTexture(ns.KindIcon(kind))
+                row.name:SetText(kind.name)
+                row:Show()
+            end
+        end
+        for key, row in pairs(rows) do
+            if not ns.KIND_BY_KEY[key] then
+                row:Hide()
+                rows[key] = nil
+            end
+        end
+    end
+    updaters[#updaters + 1] = Sync
     updaters[#updaters + 1] = Layout
 
     -- Fits the card to a width; the intro's height decides where the list starts.
@@ -853,6 +907,7 @@ local function CreateButtonsCard(parent)
         combatHeading:ClearAllPoints()
         combatHeading:SetPoint("TOP", self, "TOPRIGHT", -20 - 8 - 48 - COLUMN_GAP - 24, headings)
         top = headings - shownHeading:GetStringHeight() - 6
+        Sync()
         for _, row in pairs(rows) do row:SetWidth(width - 40) end
         Layout()
         self:SetHeight(-top + #shown * ROW_STEP - (ROW_STEP - ROW_HEIGHT) + 20)
@@ -1291,28 +1346,45 @@ local function CreateLowStockCard(parent)
         for _, row in pairs(rows) do row:SetAlpha(ns.db.lowStockWarning and 1 or 0.4) end
     end
 
-    for _, kind in ipairs(ns.KINDS) do
-        if ns.IsAvailable(kind.key) and not kind.flyout then -- camp gear has no count
-            local row = CreateFrame("Frame", nil, card)
-            row:SetHeight(32)
-            Rounded(row, "BACKGROUND", C.control)
-            local icon = row:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(22, 22)
-            icon:SetPoint("LEFT", 8, 0)
-            icon:SetTexture(ns.KindIcon(kind))
-            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            local stepper = CreateStepper(row, function() return ns.LowStock(kind.key) end, function(value)
-                ns.SetLowStock(kind.key, value)
-            end)
-            stepper:SetPoint("RIGHT", -8, 0)
-            local name = Text(row, 14, C.text)
-            name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
-            name:SetPoint("RIGHT", stepper, "LEFT", -8, 0)
-            name:SetWordWrap(false)
-            name:SetText(kind.name)
-            rows[kind.key] = row
+    local function MakeRow(kind)
+        local row = CreateFrame("Frame", nil, card)
+        row:SetHeight(32)
+        Rounded(row, "BACKGROUND", C.control)
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(22, 22)
+        row.icon:SetPoint("LEFT", 8, 0)
+        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local stepper = CreateStepper(row, function() return ns.LowStock(kind.key) end, function(value)
+            ns.SetLowStock(kind.key, value)
+        end)
+        stepper:SetPoint("RIGHT", -8, 0)
+        row.name = Text(row, 14, C.text)
+        row.name:SetPoint("LEFT", row.icon, "RIGHT", 10, 0)
+        row.name:SetPoint("RIGHT", stepper, "LEFT", -8, 0)
+        row.name:SetWordWrap(false)
+        rows[kind.key] = row
+        return row
+    end
+
+    -- A row per button with a count (camp gear has none), following custom
+    -- buttons as they come and go.
+    local function Sync()
+        for _, kind in ipairs(ns.KINDS) do
+            if ns.IsAvailable(kind.key) and not kind.flyout then
+                local row = rows[kind.key] or MakeRow(kind)
+                row.icon:SetTexture(ns.KindIcon(kind))
+                row.name:SetText(kind.name)
+                row:Show()
+            end
+        end
+        for key, row in pairs(rows) do
+            if not ns.KIND_BY_KEY[key] then
+                row:Hide()
+                rows[key] = nil
+            end
         end
     end
+    updaters[#updaters + 1] = Sync
     updaters[#updaters + 1] = Layout -- follows changes to the order
     updaters[#updaters + 1] = Dim
 
@@ -1321,6 +1393,7 @@ local function CreateLowStockCard(parent)
         self:SetWidth(width)
         LayoutCard(self)
         top = -self:GetHeight() + 4
+        Sync()
         local count = 0
         for _, row in pairs(rows) do
             row:SetWidth(width - 40)
@@ -1332,6 +1405,458 @@ local function CreateLowStockCard(parent)
     end
     card:Relayout(CARD_WIDTH)
     return card
+end
+
+------------------------------------------------------------------------
+-- Custom buttons (Custom.lua)
+------------------------------------------------------------------------
+
+-- The Custom page: a card to make a button, then a card for each one with
+-- its name and its items. Those cards come and go with the buttons (see
+-- SyncCustomCards).
+
+local customCards = {} -- [button key] = its card
+local itemBoxes = {} -- the cards' "add an item" fields, for Shift-clicked links
+
+-- Shift-clicking an item while a card's field has the focus adds that item
+-- (the game offers the link to the chat, which has no field open then).
+-- Newer clients go through ChatFrameUtil, and one may call the other: the
+-- same link twice in a moment counts once.
+local lastLink, lastLinkTime
+local function OnInsertLink(link)
+    if not link or (link == lastLink and GetTime() - lastLinkTime < 0.2) then return end
+    for box in pairs(itemBoxes) do
+        if box:IsVisible() and box:HasFocus() then
+            lastLink, lastLinkTime = link, GetTime()
+            box.addLink(link)
+            return
+        end
+    end
+end
+if ChatFrameUtil and ChatFrameUtil.InsertLink then hooksecurefunc(ChatFrameUtil, "InsertLink", OnInsertLink) end
+if ChatEdit_InsertLink then hooksecurefunc("ChatEdit_InsertLink", OnInsertLink) end
+
+local function CreateCustomIntroCard(parent)
+    local card = CreateCard(parent, L["Your own buttons"], CARD_WIDTH)
+    local intro = Text(card, 12, C.muted)
+    intro:SetPoint("TOPLEFT", 20, -52)
+    intro:SetText(L["Make a button for any items you like: a raid potion, Holy Water, a trinket. It uses the first item in its list that you carry, and an item on it leaves its usual button. Your buttons are shared by all your characters; turn them on or off and sort them on the Buttons page."])
+
+    local box = CreateTextInput(card, 220, L["Name, e.g. Raid potions"])
+    box:SetMaxLetters(24)
+    local create = CreateButton(card, L["Make button"], 120, "primary")
+    create:SetHeight(28)
+    create:SetPoint("LEFT", box, "RIGHT", 8, 0)
+    local function submit()
+        local key = ns.CreateCustomButton(box:GetText())
+        if key then
+            box:SetText("")
+            box:ClearFocus()
+            ns.ShowCustomButton(key)
+        end
+    end
+    create:SetScript("OnClick", submit)
+    box:SetScript("OnEnterPressed", submit)
+
+    function card:Relayout(width)
+        self:SetWidth(width)
+        intro:SetWidth(width - 40)
+        local y = -52 - intro:GetStringHeight() - 14
+        box:ClearAllPoints()
+        box:SetPoint("TOPLEFT", 20, y)
+        self:SetHeight(-y + box:GetHeight() + 20)
+    end
+    card:Relayout(CARD_WIDTH)
+    return card
+end
+
+local ITEM_STEP = 36
+
+-- One custom button: its name, Delete, its items in order (the first one
+-- you carry is used) and a way to add more. Drop an item from your bags
+-- anywhere on the card to add it.
+local function CreateCustomCard(parent, key)
+    local card = CreateCard(parent, "", CARD_WIDTH)
+    local rows, shown = {}, 0
+    local note -- under the add field: why an item couldn't be added, or where it came from
+
+    local intro = Text(card, 12, C.muted)
+    intro:SetPoint("TOPLEFT", 20, -52)
+    intro:SetText(L["Uses the first item from the top that you carry. Drag items here from your bags, Shift-click one, or type its name."])
+
+    local nameBox = CreateTextInput(card, 200, L["Button name"])
+    nameBox:SetMaxLetters(24)
+    local function Rename(self)
+        local kind = ns.KIND_BY_KEY[key]
+        if kind and not ns.RenameCustomButton(key, self:GetText()) then self:SetText(kind.name) end
+    end
+    nameBox:SetScript("OnEnterPressed", function(self)
+        Rename(self)
+        self:ClearFocus()
+    end)
+    nameBox:HookScript("OnEditFocusLost", Rename)
+
+    local delete = CreateConfirmButton(card, L["Delete"], 90, "danger", function() ns.DeleteCustomButton(key) end)
+    delete:SetHeight(28)
+
+    local function Say(text, color)
+        note:SetText(text or "")
+        note:SetTextColor(color[1], color[2], color[3])
+        note:SetShown(text ~= nil and text ~= "")
+        if ns.RefreshWindow then ns.RefreshWindow() end -- the card grows
+    end
+
+    local function AddItem(itemID)
+        local ok, result = ns.AddCustomItem(key, itemID)
+        if ok then
+            Say(result and L["Moved here from %s."]:format(result) or nil, C.muted)
+        else
+            Say(result, C.danger)
+        end
+        return ok
+    end
+
+    -- An item on the cursor, dropped (or clicked) on the card.
+    local function TakeCursorItem()
+        local what, itemID = GetCursorInfo()
+        if what ~= "item" or not itemID then return end
+        ClearCursor()
+        AddItem(itemID)
+    end
+    card:EnableMouse(true)
+    card:SetScript("OnReceiveDrag", TakeCursorItem)
+    card:SetScript("OnMouseUp", TakeCursorItem)
+
+    -- The add row: a slot to drop an item on, and a field to type one.
+    local slot = CreateFrame("Button", nil, card)
+    slot:SetSize(28, 28)
+    local slotBg = Rounded(slot, "BACKGROUND", C.control)
+    Rounded(slot, "BORDER", C.controlBorder, "rounded-border")
+    local plus = Icon(slot, "icon-plus", 18, C.muted)
+    plus:SetPoint("CENTER")
+    slot:SetScript("OnReceiveDrag", TakeCursorItem)
+    slot:SetScript("OnClick", TakeCursorItem)
+    slot:SetScript("OnEnter", function(self)
+        SetColor(slotBg, C.controlHover)
+        SetColor(plus, C.text)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(L["Add an item"], 1, 1, 1)
+        GameTooltip:AddLine(L["Drop an item from your bags here."], 0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+    end)
+    slot:SetScript("OnLeave", function()
+        SetColor(slotBg, C.control)
+        SetColor(plus, C.muted)
+        GameTooltip:Hide()
+    end)
+
+    local itemBox = CreateTextInput(card, 200, L["Item name or ID"])
+    itemBox:SetMaxLetters(255) -- item links are long
+    local add = CreateButton(card, L["Add"], 70)
+    add:SetHeight(28)
+    local function SubmitItem()
+        local text = itemBox:GetText()
+        if strtrim(text) == "" then return end
+        local itemID = ns.FindItem(text)
+        if not itemID then
+            Say(L["Couldn't find that item. Drag it here from your bags, or Shift-click it."], C.danger)
+        elseif AddItem(itemID) then
+            itemBox:SetText("")
+        end
+    end
+    add:SetScript("OnClick", SubmitItem)
+    itemBox:SetScript("OnEnterPressed", SubmitItem)
+    itemBox.addLink = function(link)
+        itemBox:SetText(link)
+        SubmitItem()
+    end
+    itemBoxes[itemBox] = true
+
+    note = Text(card, 12, C.danger)
+    note:Hide()
+    local empty = Text(card, 13, C.muted)
+    empty:SetText(L["No items yet."])
+
+    -- Under the items: the reminder glow, for items that give you a buff.
+    local glowTitle = Text(card, 14, C.text)
+    glowTitle:SetText(L["Glow while its buff is missing"])
+    local glowDesc = Text(card, 12, C.muted)
+    glowDesc:SetText(L["For items that give you a buff, like juju or a flask. It glows silver when the buff runs low, as set for Other buffs on the Reminders page."])
+    local glow = CreateToggle(card, function()
+        local kind = ns.KIND_BY_KEY[key]
+        return kind and kind.buff or false
+    end, function(value) ns.SetCustomGlow(key, value) end)
+
+    -- Dragging a row moves its item, like the rows on the Buttons page: it
+    -- follows the mouse, the others leave a gap where it would land, and
+    -- the page scrolls near its top and bottom edges.
+    local listTop -- where the first item row goes; set by Relayout
+    local dragged, dropAt -- the row being dragged, and the place it would land (1 = first)
+
+    -- The item rows in list order, leaving the dragged one where the mouse
+    -- has it and a gap where it would land.
+    local function PlaceRows()
+        if not listTop then return end
+        local place = 0
+        for i = 1, shown do
+            local row = rows[i]
+            if row ~= dragged then
+                place = place + 1
+                if dragged and place == dropAt then place = place + 1 end -- the gap
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT", 20, listTop - (place - 1) * ITEM_STEP)
+            end
+        end
+    end
+
+    local function CursorY()
+        local _, y = GetCursorPosition()
+        return y / card:GetEffectiveScale()
+    end
+
+    local StopDrag
+
+    local function DragUpdate(row, elapsed)
+        -- Let go somewhere the row didn't hear about it.
+        if not IsMouseButtonDown("LeftButton") then
+            StopDrag(row)
+            return
+        end
+        local scroll = card:GetParent():GetParent()
+        local y = CursorY()
+        if scroll and scroll.GetVerticalScrollRange then
+            local range, current = scroll:GetVerticalScrollRange(), scroll:GetVerticalScroll()
+            local step = 600 * elapsed
+            if y > scroll:GetTop() - 30 and current > 0 then
+                scroll:SetVerticalScroll(math.max(0, current - step))
+            elseif y < scroll:GetBottom() + 30 and current < range then
+                scroll:SetVerticalScroll(math.min(range, current + step))
+            end
+            if scroll.UpdateScrollBar then scroll.UpdateScrollBar() end
+        end
+        -- The row's top, relative to the card, kept within the list.
+        local rowTop = y - card:GetTop() + row.grabOffset
+        rowTop = math.max(listTop - (shown - 1) * ITEM_STEP, math.min(listTop, rowTop))
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 20, rowTop)
+        local at = math.floor((listTop - rowTop) / ITEM_STEP + 0.5) + 1
+        if at ~= dropAt then
+            dropAt = at
+            PlaceRows()
+        end
+    end
+
+    local function StartDrag(row)
+        if shown < 2 or not listTop or dragged then return end -- nothing to sort
+        GameTooltip:Hide()
+        dragged, dropAt = row, nil
+        for i = 1, shown do
+            if rows[i] == row then dropAt = i end -- where it is now
+        end
+        row.grabOffset = row:GetTop() - CursorY()
+        row:SetFrameLevel(card:GetFrameLevel() + 20)
+        SetColor(row.bg, C.controlHover)
+        row:SetScript("OnUpdate", DragUpdate)
+    end
+
+    function StopDrag(row)
+        if dragged ~= row then return end
+        row:SetScript("OnUpdate", nil)
+        row:SetFrameLevel(card:GetFrameLevel() + 1)
+        SetColor(row.bg, C.control)
+        local at = dropAt
+        dragged, dropAt = nil, nil
+        -- Land before the item now at that place (counting without this one).
+        local before, place = nil, 0
+        for i = 1, at and shown or 0 do
+            if rows[i] ~= row then
+                place = place + 1
+                if place == at then
+                    before = rows[i].itemID
+                    break
+                end
+            end
+        end
+        if not (at and ns.MoveCustomItemTo(key, row.itemID, before)) then PlaceRows() end
+    end
+
+    local function GetItemRow(i)
+        if rows[i] then return rows[i] end
+        local row = CreateFrame("Frame", nil, card)
+        row:SetHeight(32)
+        row.bg = Rounded(row, "BACKGROUND", C.control)
+        row:EnableMouse(true)
+        -- Dropping an item from your bags on a row adds it too.
+        MakeRowDraggable(row, StartDrag, StopDrag, TakeCursorItem)
+        row.mark = row:CreateTexture(nil, "ARTWORK") -- the item the button uses now
+        row.mark:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+        row.mark:SetSize(3, 16)
+        row.mark:SetPoint("LEFT", 2, 0)
+        -- A grip of six dots: the row can be dragged.
+        for dot = 0, 5 do
+            local texture = row:CreateTexture(nil, "ARTWORK")
+            texture:SetSize(2, 2)
+            texture:SetColorTexture(C.muted[1], C.muted[2], C.muted[3], 0.8)
+            texture:SetPoint("LEFT", 9 + (dot % 2) * 4, 4 - math.floor(dot / 2) * 4)
+        end
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(22, 22)
+        row.icon:SetPoint("LEFT", 24, 0) -- clear of the grip
+        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        row.remove = CreateFrame("Button", nil, row)
+        row.remove:SetSize(24, 24)
+        row.remove:SetPoint("RIGHT", -4, 0)
+        local x = Icon(row.remove, "icon-close", 10, C.muted)
+        x:SetPoint("CENTER")
+        row.remove:SetScript("OnEnter", function(self)
+            SetColor(x, C.text)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(L["Take it off this button"], 1, 1, 1)
+            GameTooltip:AddLine(L["It goes back on its usual button, if it has one."], 0.6, 0.6, 0.6, true)
+            GameTooltip:Show()
+        end)
+        row.remove:SetScript("OnLeave", function() SetColor(x, C.muted); GameTooltip:Hide() end)
+        row.remove:SetScript("OnClick", function() ns.RemoveCustomItem(key, row.itemID) end)
+        row.down = CreateArrow(row, false, function() ns.MoveCustomItem(key, row.itemID, 1) end)
+        row.down:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
+        row.up = CreateArrow(row, true, function() ns.MoveCustomItem(key, row.itemID, -1) end)
+        row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
+
+        row.count = Text(row, 12, C.muted)
+        row.count:SetPoint("RIGHT", row.up, "LEFT", -8, 0)
+        row.count:SetJustifyH("RIGHT")
+        row.name = Text(row, 14, C.text)
+        row.name:SetPoint("LEFT", row.icon, "RIGHT", 10, 0)
+        row.name:SetPoint("RIGHT", row.count, "LEFT", -8, 0)
+        row.name:SetWordWrap(false)
+        row:SetScript("OnEnter", function(self)
+            if dragged then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetItemByID(self.itemID)
+            GameTooltip:AddLine(L["Drag to change the order."], 0.6, 0.6, 0.6, true)
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", GameTooltip_Hide)
+        row:SetScript("OnReceiveDrag", TakeCursorItem)
+        rows[i] = row
+        return row
+    end
+
+    local loading = false -- a refresh is coming for names the game hadn't loaded
+
+    function card:Fill()
+        local kind = ns.KIND_BY_KEY[key]
+        if not kind then return end
+        self.title:SetText(kind.name:upper())
+        if not nameBox:HasFocus() then nameBox:SetText(kind.name) end
+        local inUse = ns.ItemFor(key)
+        local missing = false
+        shown = #kind.items
+        for i, itemID in ipairs(kind.items) do
+            local row = GetItemRow(i)
+            row.itemID = itemID
+            local name, _, quality = C_Item.GetItemInfo(itemID)
+            if not name then
+                C_Item.RequestLoadItemDataByID(itemID)
+                missing = true
+            end
+            local color = quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+            name = name or ("#" .. itemID)
+            row.name:SetText(color and color.hex and (color.hex .. name .. "|r") or name)
+            row.icon:SetTexture(select(5, C_Item.GetItemInfoInstant(itemID)))
+            local count = (C_Item.GetItemCount or GetItemCount)(itemID)
+            row.count:SetText(count > 0 and count or L["none"])
+            row.icon:SetDesaturated(count == 0)
+            row.mark:SetShown(inUse ~= nil and inUse.itemID == itemID)
+            row.up:SetEnabled(i > 1)
+            row.down:SetEnabled(i < shown)
+            row:Show()
+        end
+        for i = shown + 1, #rows do rows[i]:Hide() end
+        empty:SetShown(shown == 0)
+        if missing and not loading then
+            loading = true
+            C_Timer.After(0.5, function()
+                loading = false
+                if ns.RefreshWindow then ns.RefreshWindow() end
+            end)
+        end
+    end
+
+    function card:Relayout(width)
+        self:SetWidth(width)
+        intro:SetWidth(width - 40)
+        local y = -52 - intro:GetStringHeight() - 14
+        nameBox:ClearAllPoints()
+        nameBox:SetPoint("TOPLEFT", 20, y)
+        delete:ClearAllPoints()
+        delete:SetPoint("TOPRIGHT", -20, y)
+        y = y - 28 - 14
+        empty:ClearAllPoints()
+        empty:SetPoint("TOPLEFT", 20, y)
+        listTop = y
+        for i = 1, shown do rows[i]:SetWidth(width - 40) end
+        PlaceRows()
+        y = y - (shown > 0 and shown * ITEM_STEP or empty:GetStringHeight() + 14)
+        slot:ClearAllPoints()
+        slot:SetPoint("TOPLEFT", 20, y)
+        add:ClearAllPoints()
+        add:SetPoint("TOPRIGHT", -20, y)
+        itemBox:ClearAllPoints()
+        itemBox:SetPoint("LEFT", slot, "RIGHT", 8, 0)
+        itemBox:SetWidth(width - 40 - 28 - 8 - 8 - 70)
+        y = y - 28
+        if note:IsShown() then
+            note:SetWidth(width - 40)
+            note:ClearAllPoints()
+            note:SetPoint("TOPLEFT", 20, y - 8)
+            y = y - 8 - note:GetStringHeight()
+        end
+        -- The glow switch's row, like the cards' other rows (see LayoutCard).
+        y = y - 20
+        local textWidth = width - 40 - glow:GetWidth() - 24
+        glowTitle:SetWidth(textWidth)
+        glowDesc:SetWidth(textWidth)
+        local textHeight = glowTitle:GetStringHeight() + 4 + glowDesc:GetStringHeight()
+        local rowHeight = math.max(textHeight, glow:GetHeight())
+        glowTitle:ClearAllPoints()
+        glowTitle:SetPoint("TOPLEFT", 20, y - (rowHeight - textHeight) / 2)
+        glowDesc:ClearAllPoints()
+        glowDesc:SetPoint("TOPLEFT", glowTitle, "BOTTOMLEFT", 0, -4)
+        glow:ClearAllPoints()
+        glow:SetPoint("RIGHT", self, "TOPRIGHT", -20, y - rowHeight / 2)
+        y = y - rowHeight
+        self:SetHeight(-y + 20)
+    end
+
+    card:SetScript("OnHide", function() note:Hide() end) -- old news by the next visit
+    card:Fill()
+    card:Relayout(CARD_WIDTH)
+    return card
+end
+
+-- The Custom page's cards: the intro card, then one per custom button in
+-- the order they were made. Runs before every layout of the window.
+local function SyncCustomCards(page)
+    local cards = { page.cards[1] }
+    for _, def in ipairs(ns.CustomButtons()) do
+        local card = customCards[def.key]
+        if not card then
+            card = CreateCustomCard(page.content, def.key)
+            customCards[def.key] = card
+        end
+        card:Fill()
+        card:Show()
+        cards[#cards + 1] = card
+    end
+    for key, card in pairs(customCards) do
+        if not ns.KIND_BY_KEY[key] then
+            card:Hide()
+            customCards[key] = nil
+        end
+    end
+    page.cards = cards
 end
 
 local function ProfileExists(name)
@@ -1630,6 +2155,8 @@ end
 local PAGES = {
     { key = "buttons", title = L["Buttons"], subtitle = L["Order, combat & hotkeys"], icon = "icon-list",
         cards = { CreateButtonsCard } },
+    { key = "custom", title = L["Custom"], subtitle = L["Your own buttons"], icon = "icon-plus",
+        cards = { CreateCustomIntroCard }, sync = SyncCustomCards },
     { key = "items", title = L["Items"], subtitle = L["Hiding, macros & using items"], icon = "icon-items",
         cards = { CreateUsingItemsCard, CreateMacrosCard, CreateHiddenCard } },
     { key = "bar", title = L["Bar"], subtitle = L["Position & layout"], icon = "icon-sort",
@@ -1903,7 +2430,13 @@ local function CreateWindow()
         for _, create in ipairs(info.cards) do cards[#cards + 1] = create(content) end
         local nav = CreateNavButton(sidebar, info, navY)
         navY = navY - nav:GetHeight() - NAV_SPACING
-        pages[info.key] = { frame = frame, scroll = scroll, content = content, cards = cards, nav = nav }
+        local page = { frame = frame, scroll = scroll, content = content, cards = cards, nav = nav }
+        pages[info.key] = page
+        -- Pages whose cards come and go (custom buttons) sync before each layout.
+        if info.sync then
+            info.sync(page)
+            updaters[#updaters + 1] = function() info.sync(page) end
+        end
         tallest = math.max(tallest, LayoutPage(info.key))
     end
     CreateResizeGrip()
@@ -1937,6 +2470,22 @@ function ns.ToggleWindow(show)
     if not window then CreateWindow() end
     if show == nil then show = not window:IsShown() end
     window:SetShown(show)
+end
+
+-- Opens the options at a custom button's card (from its right-click list,
+-- or just after making it).
+function ns.ShowCustomButton(key)
+    ns.ToggleWindow(true)
+    if not window:IsShown() then return end
+    SelectPage("custom")
+    -- Scrolled once the page has its new height.
+    C_Timer.After(0, function()
+        local card, page = customCards[key], pages.custom
+        if not (card and page and card:IsVisible() and card:GetTop()) then return end
+        local offset = page.content:GetTop() - card:GetTop() - 20
+        page.scroll:SetVerticalScroll(math.max(0, math.min(page.scroll:GetVerticalScrollRange(), offset)))
+        page.scroll.UpdateScrollBar()
+    end)
 end
 
 ------------------------------------------------------------------------

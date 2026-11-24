@@ -11,8 +11,8 @@
     icon-look.tga, icon-clock.tga,
     pointer.tga                        32x32 triangle pointing down, for
                                        the tour's speech bubble
-    icon-items.tga                     32x32 sidebar icons for the Look,
-                                       Reminders and Items pages, in the style of
+    icon-items.tga, icon-plus.tga      32x32 sidebar icons for the Look,
+                                       Reminders, Items and Custom pages, in the style of
                                        Pocket Goblin's (icon-list, icon-sort
                                        and icon-profile come from there)
 
@@ -109,6 +109,14 @@ def flask(x, y):
     return min(outline, neck, liquid)
 
 
+def plus(x, y):
+    """A rounded square outline with a plus inside: a button you add."""
+    frame = abs(rect(x, y, 0, 0, 12, 12, 4)) - 1.25
+    across = capsule(x, y, -5.5, 0, 5.5, 0, 1.25)
+    down = capsule(x, y, 0, -5.5, 0, 5.5, 1.25)
+    return min(frame, across, down)
+
+
 def half_plane(x, y, ax, ay, bx, by):
     """Signed distance to the line through a and b; negative on its left
     (seen walking from a to b)."""
@@ -137,7 +145,7 @@ def main():
             return math.exp(-((outside / GLOW_SPREAD) ** 2))
         save("glow-" + shape, 128, glow)
 
-    for name, shape in (("icon-look", eye), ("icon-clock", clock), ("icon-items", flask)):
+    for name, shape in (("icon-look", eye), ("icon-clock", clock), ("icon-items", flask), ("icon-plus", plus)):
         save(name, 32, lambda x, y, d=shape: 0.5 - d(x, y))
     save("pointer", 32, lambda x, y: 0.5 - pointer(x, y))
 

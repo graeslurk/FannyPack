@@ -46,27 +46,53 @@ local written = {} -- [macro name] = the text last written, so unchanged macros 
 local warnedFull = false
 
 -- Creates or updates this character's Fanny Pack macros. Not in combat.
+-- charDB.macroNames remembers the name each macro was given, so a custom
+-- button renamed or deleted while playing another character takes this
+-- character's macro along, or deletes it, instead of leaving it behind.
 function ns.UpdateMacros()
     if InCombatLockdown() or not ns.charDB or not CreateMacro then return end
+    local names = ns.charDB.macroNames
     for key in pairs(ns.charDB.macros) do
-        if ns.KIND_BY_KEY[key] then
+        local had = names[key]
+        if not ns.KIND_BY_KEY[key] then
+            -- Only custom buttons go away. (Clearing a field while looping is allowed.)
+            if key:find("^custom%d+$") then
+                local index = had and GetMacroIndexByName(had) or 0
+                if index > 0 then DeleteMacro(index) end
+                if had then written[had] = nil end
+                ns.charDB.macros[key], names[key] = nil, nil
+            end
+        else
             local name, body = ns.MacroName(key), MacroBody(key)
             local index = GetMacroIndexByName(name)
+            if index == 0 and had and had ~= name then
+                -- Renamed elsewhere: the old macro takes the new name, and
+                -- stays where it sits on your action bars.
+                index = GetMacroIndexByName(had)
+                if index > 0 then
+                    EditMacro(index, name, QUESTION_MARK, body)
+                    written[had], written[name] = nil, body
+                end
+            end
             if index == 0 then
                 -- Just try: the limit the game reports doesn't always match
                 -- what it allows. It refuses (an error) when the slots are full.
                 local ok, created = pcall(CreateMacro, name, QUESTION_MARK, body, true)
                 if ok and created and created > 0 then
                     written[name] = body
+                    names[key] = name
                 elseif not warnedFull then
                     warnedFull = true
                     local _, perCharacter = GetNumMacros()
                     ns.Print(L["The game wouldn't make the macro %s (this character has %d macros). Delete one in /macro and try again."],
                         name, perCharacter or 0)
                 end
-            elseif written[name] ~= body then
-                EditMacro(index, name, QUESTION_MARK, body)
-                written[name] = body
+            else
+                if written[name] ~= body then
+                    EditMacro(index, name, QUESTION_MARK, body)
+                    written[name] = body
+                end
+                names[key] = name
             end
         end
     end
@@ -85,11 +111,26 @@ function ns.SetMacro(key, on)
         ns.UpdateMacros()
     else
         ns.charDB.macros[key] = nil
+        ns.charDB.macroNames[key] = nil
         local index = GetMacroIndexByName(name)
         if index > 0 then DeleteMacro(index) end
         written[name] = nil
     end
     if ns.RefreshWindow then ns.RefreshWindow() end
+end
+
+-- A custom button was renamed (Custom.lua): its macro takes the new name,
+-- and stays wherever it sits on your action bars. Not in combat.
+function ns.RenameMacro(oldName, key)
+    written[oldName] = nil
+    if InCombatLockdown() or not EditMacro then return end
+    local index = GetMacroIndexByName(oldName)
+    if index > 0 then
+        local name, body = ns.MacroName(key), MacroBody(key)
+        EditMacro(index, name, QUESTION_MARK, body)
+        written[name] = body
+        ns.charDB.macroNames[key] = name
+    end
 end
 
 -- Puts a button's macro on the cursor, to drop on an action bar.

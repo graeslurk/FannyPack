@@ -11,6 +11,14 @@ local L = ns.L
 -- new; points: the card's lines, each with the options page it's on.
 ns.WHATS_NEW = {
     {
+        version = "1.8.0",
+        chat = L["make your own buttons for any items you like"],
+        points = {
+            { text = L["Custom buttons: make your own button for any items, like raid potions, Holy Water or a trinket, used in the order you set."],
+                page = "custom" },
+        },
+    },
+    {
         version = "1.7.0",
         chat = L["macros for your own action bars, and binding keys by hovering the buttons"],
         points = {

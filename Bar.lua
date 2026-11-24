@@ -703,10 +703,12 @@ local function WantsGlow(button, empty)
         return ns.db.weaponGlow and WeaponGlow(button.kind.slot) or nil
     elseif button.kind.buff then
         -- The buff is named like the item's use effect, e.g. "Elixir of the
-        -- Mongoose" or "Stamina" for a Scroll of Stamina.
-        if not ns.db[GLOW_SETTING[key]] or not button.itemID then return nil end
+        -- Mongoose" or "Stamina" for a Scroll of Stamina. A custom button
+        -- with its glow on (Custom.lua) goes by the Other buffs timing.
+        local custom = button.kind.custom
+        if not button.itemID or (not custom and not ns.db[GLOW_SETTING[key]]) then return nil end
         local spell = GetItemSpell(button.itemID)
-        local minutes = ns.db[MINUTES_SETTING[key] or "elixirMinutes"]
+        local minutes = ns.db[MINUTES_SETTING[key] or (custom and "otherBuffMinutes") or "elixirMinutes"]
         return spell and GlowFor(AuraTimeLeft(spell), minutes) or nil
     end
     return nil
@@ -1123,6 +1125,9 @@ local function ShowButtonTooltip(self)
         GameTooltip:AddLine(L["Click to put it on your off-hand weapon."], 0.6, 0.6, 0.6, true)
     end
     GameTooltip:AddLine(L["Right-click to choose another item, or hide one."], 0.6, 0.6, 0.6, true)
+    if self.kind.custom then
+        GameTooltip:AddLine(L["Your own button: drop an item from your bags on it to add it."], 0.6, 0.6, 0.6, true)
+    end
     GameTooltip:Show()
 end
 
@@ -1231,7 +1236,35 @@ local function CreateItemButton(kind)
     button:SetAttribute("fp-enabled", false)
     button:SetScript("OnEnter", ShowButtonTooltip)
     button:SetScript("OnLeave", GameTooltip_Hide)
+    -- Custom buttons: drop an item from your bags on one to add it.
+    if kind.custom then
+        button:SetScript("OnReceiveDrag", function(self)
+            local what, itemID = GetCursorInfo()
+            if what ~= "item" or not itemID then return end
+            ClearCursor()
+            local ok, why = ns.AddCustomItem(self.kind.key, itemID)
+            if not ok and why then ns.Refuse(why) end
+        end)
+    end
     return button
+end
+
+-- A custom button made while you play (Custom.lua). Not in combat.
+function ns.AddBarButton(kind)
+    if not bar or buttons[kind.key] or InCombatLockdown() then return end
+    buttons[kind.key] = CreateItemButton(kind)
+end
+
+-- A custom button deleted: off the bar for good. Its frame stays, hidden
+-- (the game can't delete frames); its key is never used again.
+function ns.RemoveBarButton(key)
+    local button = buttons[key]
+    if not button or InCombatLockdown() then return end
+    if picker and picker.owner == button then picker:Hide() end
+    button:SetAttribute("fp-enabled", false)
+    button:Hide()
+    glowFrames[button] = nil
+    buttons[key] = nil
 end
 
 -- Like the action bars, the buttons act on the half of a click the game's
@@ -1792,9 +1825,13 @@ local function GetRow(i)
     row.hide:SetScript("OnClick", function() ns.SetHidden(row.itemID, true) end)
 
     -- An item: use it on this button. A hidden one: show it again. Camp
-    -- gear only lists its items (they're used from the row).
+    -- gear only lists its items (they're used from the row). A custom
+    -- button's last row opens its card in the options.
     row:SetScript("OnClick", function(self)
-        if self.unhide then
+        if self.edit then
+            picker:Hide()
+            ns.ShowCustomButton(picker.owner.kind.key)
+        elseif self.unhide then
             ns.SetHidden(self.itemID, false)
         elseif not picker.owner.kind.flyout then
             ns.SetChoice(picker.owner.kind.key, self.itemID)
@@ -1924,12 +1961,14 @@ function ns.RefreshPicker()
     picker.title:SetText(kind.name:upper())
 
     local count, width = 0, picker.title:GetStringWidth() + 28
-    -- mode: "item" (has the hide x) or "hidden" (click to show it again).
+    -- mode: "item" (has the hide x), "hidden" (click to show it again) or
+    -- "edit" (a custom button's items in the options).
     local function Add(itemID, icon, name, countText, enabled, selected, mode)
         count = count + 1
         local row = GetRow(count)
         row.itemID = itemID
         row.unhide = mode == "hidden"
+        row.edit = mode == "edit"
         row.hide:SetShown(mode == "item")
         row.count:ClearAllPoints()
         if mode == "item" then
@@ -1964,7 +2003,10 @@ function ns.RefreshPicker()
     elseif #list == 0 then
         Add(nil, nil, "|cff8a8b93" .. L["None in your bags."] .. "|r", "", false, false)
     else
-        if not listOnly then Add(nil, list[1].icon, L["Best available"], "", true, not usingChoice) end
+        if not listOnly then
+            Add(nil, list[1].icon, kind.custom and L["First in your list"] or L["Best available"], "", true,
+                not usingChoice)
+        end
         for _, entry in ipairs(list) do
             local name = entry.name
             local color = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[entry.quality]
@@ -1983,6 +2025,10 @@ function ns.RefreshPicker()
             Add(entry.itemID, entry.icon, "|cff808080" .. entry.name .. "|r", L["show"], true, false, "hidden")
         end
     end
+    if kind.custom then
+        local green = ("|cff%02x%02x%02x"):format(C.accent[1] * 255, C.accent[2] * 255, C.accent[3] * 255)
+        Add(nil, nil, green .. L["Change its items..."] .. "|r", "", true, false, "edit")
+    end
     for i = count + 1, #picker.rows do picker.rows[i]:Hide() end
 
     local lowStock = ns.LowStock(kind.key)
@@ -1991,11 +2037,13 @@ function ns.RefreshPicker()
     picker.footer.minus:SetAlpha(lowStock > 0 and 1 or 0.4)
 
     -- Eat & drink picks nothing itself: its items come from Food and Drink.
-    -- Camp gear has neither a pick nor a count.
+    -- Camp gear has neither a pick nor a count. Custom buttons go by your
+    -- list, not by level.
+    local noPrefer = kind.combo or listOnly or kind.custom
     picker.footer:SetShown(not listOnly)
-    picker.prefer:SetShown(not kind.combo and not listOnly)
+    picker.prefer:SetShown(not noPrefer)
     picker.prefer.toggle:Update(true)
-    local preferHeight = (kind.combo or listOnly) and 0 or PREFER_HEIGHT
+    local preferHeight = noPrefer and 0 or PREFER_HEIGHT
     local footerHeight = listOnly and 0 or FOOTER_HEIGHT
 
     picker:SetSize(math.max(260, width), 30 + count * ROW_HEIGHT + 6 + preferHeight + footerHeight)
