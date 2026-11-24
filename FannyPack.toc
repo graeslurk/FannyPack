@@ -9,7 +9,7 @@
 ## IconTexture: Interface\AddOns\FannyPack\Media\icon
 ## SavedVariables: FannyPackDB
 ## SavedVariablesPerCharacter: FannyPackCharDB
-## OptionalDeps: EllesmereUIUnitFrames
+## OptionalDeps: EllesmereUIUnitFrames, Masque
 ## AddonCompartmentFunc: FannyPack_OnAddonCompartmentClick
 
 Locales/Locales.lua
@@ -20,6 +20,7 @@ Custom.lua
 News.lua
 UI.lua
 Bar.lua
+Skin.lua
 Minimap.lua
 Tour.lua
 Macros.lua

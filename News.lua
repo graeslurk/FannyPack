@@ -12,10 +12,12 @@ local L = ns.L
 ns.WHATS_NEW = {
     {
         version = "1.8.0",
-        chat = L["make your own buttons for any items you like"],
+        chat = L["make your own buttons for any items you like, and Masque skins"],
         points = {
             { text = L["Custom buttons: make your own button for any items, like raid potions, Holy Water or a trinket, used in the order you set."],
                 page = "custom" },
+            { text = L["Masque: with Masque installed, skin the buttons to match your action bars (/msq)."],
+                page = "look" },
         },
     },
     {

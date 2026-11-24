@@ -1032,22 +1032,37 @@ end
 -- How the buttons look.
 local function CreateLookCard(parent)
     local card = CreateCard(parent, L["Look"], CARD_WIDTH)
-    AddRow(card, L["Shape"], L["The shape of the buttons."],
+    local shape, border
+    local shapeDesc = AddRow(card, L["Shape"], L["The shape of the buttons."],
         function(p)
-            return CreateSegmented(p, {
+            shape = CreateSegmented(p, {
                 { value = "square", label = L["Square"] },
                 { value = "rounded", label = L["Rounded"] },
                 { value = "round", label = L["Round"] },
             }, function() return ns.db.shape end, ns.SetShape, 76)
+            return shape
         end)
-    AddRow(card, L["Border"], L["A thin line around each button."],
+    local borderDesc = AddRow(card, L["Border"], L["A thin line around each button."],
         function(p)
-            return CreateSegmented(p, {
+            border = CreateSegmented(p, {
                 { value = "none", label = L["None"] },
                 { value = "silver", label = L["Silver"] },
                 { value = "gold", label = L["Gold"] },
             }, function() return ns.db.border end, ns.SetBorder, 76)
+            return border
         end)
+    -- With a Masque skin on (Skin.lua), the skin decides both. They're
+    -- kept, dimmed, for when it's off.
+    local function FollowMasque()
+        local masque = ns.MasqueActive and ns.MasqueActive()
+        shapeDesc:SetText(masque and L["Your Masque skin shapes the buttons: pick one for Fanny Pack in Masque's options (/msq)."]
+            or L["The shape of the buttons."])
+        borderDesc:SetText(masque and L["Set by your Masque skin."] or L["A thin line around each button."])
+        shape:SetAlpha(masque and 0.4 or 1)
+        border:SetAlpha(masque and 0.4 or 1)
+    end
+    FollowMasque()
+    updaters[#updaters + 1] = FollowMasque
     AddRow(card, L["Button size"], L["How big the buttons are."],
         function(p)
             return CreateSlider(p, 24, 56, function() return ns.db.buttonSize end, ns.SetButtonSize, 140)

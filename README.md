@@ -164,6 +164,9 @@ Type `/fannypack` (or click the minimap button) to open the options.
 - **Shape**: square, rounded or round
 - **Border**: none, or a thin silver or gold line
 - **Button size** and **spacing**
+- **Masque**: with the Masque addon installed, pick a skin for the "Fanny
+  Pack" group in Masque's options (`/msq`) and the buttons match your action
+  bars. The skin then decides the shape and border
 - **Fade out of combat**: the bar disappears outside combat and comes back
   when you hover over it or a fight starts. A glowing reminder stays visible
 - The buff food and weapon **reminders** can each be turned off
