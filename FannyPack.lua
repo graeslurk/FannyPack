@@ -84,15 +84,52 @@ ns.KIND_BY_KEY = {}
 for _, kind in ipairs(ns.KINDS) do ns.KIND_BY_KEY[kind.key] = kind end
 
 -- Sharpening stones, weightstones and oils that go on a weapon for half an
--- hour. Newer ones are caught by their names (see Classify).
+-- hour, with what each is: sharp (only for axes, swords, daggers and
+-- polearms), blunt (only for maces and staves), stone (any melee weapon),
+-- wizard or mana oil, or another oil. Newer ones are caught by their names
+-- (see Classify and WeaponItemType).
 local WEAPON_ITEMS = {
-    [2862] = true, [2863] = true, [2871] = true, [7964] = true, [12404] = true, -- sharpening stones, Rough to Dense
-    [18262] = true, [23122] = true, -- Elemental and Consecrated Sharpening Stone
-    [3239] = true, [3240] = true, [3241] = true, [7965] = true, [12643] = true, -- weightstones, Rough to Dense
-    [20744] = true, [20746] = true, [20750] = true, [20749] = true, [23123] = true, -- wizard oils, Minor to Blessed
-    [20745] = true, [20747] = true, [20748] = true, -- mana oils, Minor to Brilliant
-    [3824] = true, [3829] = true, -- Shadow Oil, Frost Oil
+    [2862] = "sharp", [2863] = "sharp", [2871] = "sharp", [7964] = "sharp", [12404] = "sharp", -- sharpening stones, Rough to Dense
+    [18262] = "stone", [23122] = "stone", -- Elemental and Consecrated Sharpening Stone
+    [3239] = "blunt", [3240] = "blunt", [3241] = "blunt", [7965] = "blunt", [12643] = "blunt", -- weightstones, Rough to Dense
+    [20744] = "wizard", [20746] = "wizard", [20750] = "wizard", [20749] = "wizard", [23123] = "wizard", -- wizard oils, Minor to Blessed
+    [20745] = "mana", [20747] = "mana", [20748] = "mana", -- mana oils, Minor to Brilliant
+    [3824] = "oil", [3829] = "oil", -- Shadow Oil, Frost Oil
 }
+
+-- Which kind of weapon item comes first, by what you'd rather have on your
+-- weapon (see ns.WeaponPreference): stones, wizard oil or mana oil.
+local WEAPON_PREFERENCE_ORDER = {
+    stone = { stone = 1, oil = 2, wizard = 3, mana = 4 },
+    wizard = { wizard = 1, mana = 2, stone = 3, oil = 4 },
+    mana = { mana = 1, wizard = 2, stone = 3, oil = 4 },
+}
+-- Casters start on oils; the rest on stones.
+local CLASS_WEAPON_PREFERENCE = { MAGE = "wizard", WARLOCK = "wizard", PRIEST = "mana", DRUID = "mana" }
+
+-- Weapons by their edge, for stones (Enum.ItemWeaponSubclass): axes,
+-- polearms, swords and daggers are sharp; maces and staves blunt. Fist
+-- weapons and anything else aren't judged.
+local SHARP_WEAPONS = { [0] = true, [1] = true, [6] = true, [7] = true, [8] = true, [15] = true }
+local BLUNT_WEAPONS = { [4] = true, [5] = true, [10] = true }
+local WEAPON_CLASS = Enum.ItemClass and Enum.ItemClass.Weapon or 2
+
+-- The weapon in a slot (16 main hand, 17 off-hand): "sharp", "blunt",
+-- "other", or nil with no weapon there (a shield, or nothing).
+local function HeldEdge(slot)
+    local itemID = GetInventoryItemID("player", slot)
+    if not itemID then return nil end
+    local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
+    if classID ~= WEAPON_CLASS then return nil end
+    return SHARP_WEAPONS[subClassID] and "sharp" or BLUNT_WEAPONS[subClassID] and "blunt" or "other"
+end
+
+-- Whether a weapon item of this type can go on a weapon with this edge.
+-- With no weapon there's nothing to judge.
+local function FitsWeapon(itemType, edge)
+    if itemType ~= "sharp" and itemType ~= "blunt" then return true end
+    return edge == nil or edge == "other" or edge == itemType
+end
 
 -- Demonic Rune and Dark Rune: mana for health, on their own cooldown, apart
 -- from potions.
@@ -103,14 +140,44 @@ local RUNES = { [12662] = true, [20520] = true }
 local MANA_GEMS = { [5514] = true, [5513] = true, [8007] = true, [8008] = true }
 
 -- Scrolls of Agility, Intellect, Protection, Spirit, Stamina and Strength,
--- ranks I to IV. Newer ones are caught by their names (see Classify).
+-- ranks I to IV, with the stat each is for. Newer ones are caught by their
+-- names (see Classify), and their stat by their buff (see ScrollStat).
 local SCROLLS = {
-    [3012] = true, [1477] = true, [4425] = true, [10309] = true, -- Agility
-    [955] = true, [2290] = true, [4419] = true, [10308] = true, -- Intellect
-    [3013] = true, [1478] = true, [4421] = true, [10305] = true, -- Protection
-    [1181] = true, [1712] = true, [4424] = true, [10306] = true, -- Spirit
-    [1180] = true, [1711] = true, [4422] = true, [10307] = true, -- Stamina
-    [954] = true, [2289] = true, [4426] = true, [10310] = true, -- Strength
+    [3012] = "agility", [1477] = "agility", [4425] = "agility", [10309] = "agility",
+    [955] = "intellect", [2290] = "intellect", [4419] = "intellect", [10308] = "intellect",
+    [3013] = "protection", [1478] = "protection", [4421] = "protection", [10305] = "protection",
+    [1181] = "spirit", [1712] = "spirit", [4424] = "spirit", [10306] = "spirit",
+    [1180] = "stamina", [1711] = "stamina", [4422] = "stamina", [10307] = "stamina",
+    [954] = "strength", [2289] = "strength", [4426] = "strength", [10310] = "strength",
+}
+
+-- The stats scrolls are for. spell: the buff of the rank I scroll, for its
+-- name in the client's language (buff: in English, for when the game
+-- doesn't know the spell); item: the rank IV scroll, for its icon.
+ns.SCROLL_STATS = {
+    { key = "agility", name = L["Agility"], spell = 8115, buff = "Agility", item = 10309 },
+    { key = "strength", name = L["Strength"], spell = 8118, buff = "Strength", item = 10310 },
+    { key = "stamina", name = L["Stamina"], spell = 8099, buff = "Stamina", item = 10307 },
+    { key = "intellect", name = L["Intellect"], spell = 8096, buff = "Intellect", item = 10308 },
+    { key = "spirit", name = L["Spirit"], spell = 8112, buff = "Spirit", item = 10306 },
+    { key = "protection", name = L["Protection"], spell = 8091, buff = "Armor", item = 10305 },
+}
+ns.SCROLL_STAT_BY_KEY = {}
+for _, stat in ipairs(ns.SCROLL_STATS) do ns.SCROLL_STAT_BY_KEY[stat.key] = stat end
+
+-- Which scrolls each class wants first, until a profile sorts them itself
+-- (see ns.ScrollOrder). Healers among the hybrids move Intellect and
+-- Spirit up.
+local CLASS_SCROLL_ORDER = {
+    WARRIOR = { "strength", "agility", "stamina", "protection", "spirit", "intellect" },
+    ROGUE = { "agility", "strength", "stamina", "protection", "spirit", "intellect" },
+    HUNTER = { "agility", "stamina", "intellect", "strength", "spirit", "protection" },
+    MAGE = { "intellect", "spirit", "stamina", "protection", "agility", "strength" },
+    PRIEST = { "intellect", "spirit", "stamina", "protection", "agility", "strength" },
+    WARLOCK = { "intellect", "stamina", "spirit", "protection", "agility", "strength" },
+    PALADIN = { "strength", "agility", "stamina", "intellect", "spirit", "protection" },
+    SHAMAN = { "strength", "agility", "stamina", "intellect", "spirit", "protection" },
+    DRUID = { "strength", "agility", "stamina", "intellect", "spirit", "protection" },
 }
 
 -- Rogue poisons. Newer ones are caught by their names (see Classify).
@@ -199,6 +266,11 @@ local PROFILE_DEFAULTS = {
 --     LEFT or RIGHT for one growing up or down (see ns.RowsToward)
 --   position = { frame = "player" or "screen", x, y } once the bar is
 --     dragged; until then it sits above the player frame
+--   weaponPrefer = stone, wizard or mana: what the weapon button uses first
+--     when you carry more than one kind; unset: your class's (see
+--     ns.WeaponPreference)
+--   scrollOrder = the scroll stats (see ns.SCROLL_STATS) in the order the
+--     scroll button uses them; unset: your class's (see ns.ScrollOrder)
 --   wellFedMinutes, elixirMinutes, scrollMinutes, otherBuffMinutes, weaponMinutes = how long
 --     before each runs out its reminder glows silver (0: never); see
 --     ns.RUNNING_OUT
@@ -263,6 +335,22 @@ local function SpellName(spellID)
     return GetSpellInfo and GetSpellInfo(spellID)
 end
 ns.SpellName = SpellName
+
+-- The stat a scroll is for (a key of ns.SCROLL_STAT_BY_KEY), or nil: from
+-- the list above, or by the buff it gives, named after its stat.
+local statByBuff -- [buff name] = stat key, in the client's language
+local function ScrollStat(itemID)
+    if SCROLLS[itemID] then return SCROLLS[itemID] end
+    if not statByBuff then
+        statByBuff = {}
+        for _, stat in ipairs(ns.SCROLL_STATS) do
+            statByBuff[SpellName(stat.spell) or stat.buff] = stat.key
+        end
+    end
+    local buff = GetItemSpell(itemID)
+    return buff and statByBuff[buff] or nil
+end
+ns.ScrollStat = ScrollStat
 
 local kindBySpell -- [use effect name] = kind key
 
@@ -597,6 +685,7 @@ end
 -- then the one that restores least, then the lowest level, then the
 -- smallest stack.
 local function Lower(a, b)
+    if a.rank ~= b.rank then return a.rank < b.rank end -- scrolls and weapon items: your order
     if a.conjured ~= b.conjured then return a.conjured end
     if a.amount ~= b.amount then return a.amount < b.amount end
     if a.level ~= b.level then return a.level < b.level end
@@ -614,6 +703,15 @@ local function Better(a, b)
     if a.conjured ~= b.conjured then return a.conjured end
     if a.itemLevel ~= b.itemLevel then return a.itemLevel > b.itemLevel end
     return a.itemID < b.itemID
+end
+
+-- Scrolls and weapon items: usable ones first, then in your order (of
+-- stats, see ns.ScrollOrder; of stones and oils, see ns.WeaponPreference),
+-- then the best.
+local function RankFirst(a, b)
+    if a.usable ~= b.usable then return a.usable end
+    if a.rank ~= b.rank then return a.rank < b.rank end
+    return Better(a, b)
 end
 
 -- The camp gear row: campfires first, then by name.
@@ -638,6 +736,16 @@ local function YourOrder(kind)
     end
 end
 
+-- A weapon item not in WEAPON_ITEMS, by its name.
+local function WeaponItemType(name)
+    local lower = ns.Lower(name)
+    if lower:find(L["sharpening stone"], 1, true) then return "sharp" end
+    if lower:find(L["weightstone"], 1, true) then return "blunt" end
+    if lower:find(L["wizard oil"], 1, true) then return "wizard" end
+    if lower:find(L["mana oil"], 1, true) then return "mana" end
+    return "oil"
+end
+
 local retries = 0
 
 function ns.Scan()
@@ -654,6 +762,13 @@ function ns.Scan()
     for _, list in pairs(ns.items) do wipe(list) end
     for _, list in pairs(ns.hiddenItems) do wipe(list) end
     local playerLevel = UnitLevel("player")
+    local statRank = {}
+    for i, stat in ipairs(ns.ScrollOrder()) do statRank[stat] = i end
+    -- Stones go by the weapon the button puts them on: the main hand's, or
+    -- the off-hand's with no weapon in the main hand.
+    local weaponRank = WEAPON_PREFERENCE_ORDER[ns.WeaponPreference()]
+    local mainEdge, offEdge = HeldEdge(16), HeldEdge(17)
+    local edge = mainEdge or offEdge
     for itemID, key in pairs(found) do
         local name, _, quality, itemLevel, minLevel, _, _, _, _, icon = C_Item.GetItemInfo(itemID)
         if name then
@@ -678,6 +793,17 @@ function ns.Scan()
                     amount = 0
                 end
             end
+            local rank, weaponType, fitsOff, anyWeapon
+            if key == "scroll" then
+                rank = statRank[ScrollStat(itemID)] or #ns.SCROLL_STATS + 1 -- unknown ones last
+            elseif key == "weapon" then
+                weaponType = WEAPON_ITEMS[itemID] or WeaponItemType(name)
+                local family = (weaponType == "sharp" or weaponType == "blunt") and "stone" or weaponType
+                rank = weaponRank[family] or 5
+                anyWeapon = usable
+                fitsOff = FitsWeapon(weaponType, offEdge)
+                usable = usable and FitsWeapon(weaponType, edge)
+            end
             local lists = db and db.hidden[itemID] and ns.hiddenItems or ns.items
             table.insert(lists[key], {
                 itemID = itemID,
@@ -690,6 +816,14 @@ function ns.Scan()
                 amount = amount,
                 conjured = IsConjured(itemID),
                 usable = usable,
+                -- Scrolls and weapon items: their place in your order.
+                rank = rank,
+                stat = key == "scroll" and ScrollStat(itemID) or nil, -- a scroll's stat
+                -- Weapon items: sharp, blunt, stone, wizard, mana or oil; whether
+                -- it goes on the off-hand weapon; and usable on some weapon.
+                weaponType = weaponType,
+                fitsOff = fitsOff,
+                anyWeapon = anyWeapon,
             })
         end
     end
@@ -698,7 +832,7 @@ function ns.Scan()
         if kind.custom then
             table.sort(list, YourOrder(kind))
         else
-            table.sort(list, key == "camp" and CampFirst or Better)
+            table.sort(list, key == "camp" and CampFirst or (key == "scroll" or key == "weapon") and RankFirst or Better)
         end
     end
     for _, list in pairs(ns.hiddenItems) do
@@ -790,6 +924,17 @@ function ns.ItemFor(key)
         -- All of them are on: the usual pick, which then hides.
     end
     return Pick(key)
+end
+
+-- What the weapon button's Shift-click puts on your off-hand weapon: the
+-- main hand's item if it fits there too, otherwise the best that does.
+function ns.OffHandItemFor(key)
+    local entry = ns.ItemFor(key)
+    if not entry or entry.fitsOff or HeldEdge(16) == nil then return entry end
+    for _, other in ipairs(ns.ListFor(key)) do
+        if other.fitsOff and other.anyWeapon then return other end
+    end
+    return entry
 end
 
 -- Total carried of a kind, for the minimap tooltip.
@@ -1029,6 +1174,106 @@ function ns.OpenKeyBindings()
     else
         Print(L["Open the game menu, then Key Bindings, and look for the Fanny Pack section."])
     end
+end
+
+-- What the weapon button would rather put on your weapon when you carry
+-- more than one kind: "stone", "wizard" (oil) or "mana" (oil). The
+-- profile's choice, or your class's.
+local function ClassWeaponPreference()
+    return CLASS_WEAPON_PREFERENCE[select(2, UnitClass("player"))] or "stone"
+end
+
+function ns.WeaponPreference()
+    local value = db and db.weaponPrefer
+    return WEAPON_PREFERENCE_ORDER[value] and value or ClassWeaponPreference()
+end
+
+function ns.SetWeaponPreference(value)
+    db.weaponPrefer = value ~= ClassWeaponPreference() and value or nil
+    ns.Scan()
+    ns.UpdateBar()
+end
+
+-- The scroll stats in the order the scroll button uses them: the
+-- profile's own, or your class's until you sort them. Each stat once.
+local function ClassScrollOrder()
+    return CLASS_SCROLL_ORDER[select(2, UnitClass("player"))] or CLASS_SCROLL_ORDER.DRUID
+end
+
+function ns.ScrollOrder()
+    local order, seen = {}, {}
+    local lists = { db and db.scrollOrder or ClassScrollOrder(), ns.SCROLL_STATS }
+    for _, list in ipairs(lists) do
+        for _, entry in ipairs(list) do
+            local key = type(entry) == "table" and entry.key or entry
+            if ns.SCROLL_STAT_BY_KEY[key] and not seen[key] then
+                seen[key] = true
+                order[#order + 1] = key
+            end
+        end
+    end
+    return order
+end
+
+-- Whether the scrolls go in your class's order (the profile hasn't sorted them).
+function ns.ScrollOrderIsClass()
+    return db.scrollOrder == nil
+end
+
+-- Saves a new order of scroll stats (nil: your class's) and re-sorts the
+-- scrolls. An order the same as your class's isn't saved, so it keeps
+-- following the class.
+local function SetScrollOrder(order)
+    if order then
+        local class, same = ClassScrollOrder(), true
+        for i, key in ipairs(order) do
+            if class[i] ~= key then same = false end
+        end
+        if same then order = nil end
+    end
+    db.scrollOrder = order
+    ns.Scan()
+    ns.UpdateBar()
+    if ns.RefreshWindow then ns.RefreshWindow() end
+end
+
+function ns.MoveScrollStat(key, delta)
+    local order = ns.ScrollOrder()
+    for i, k in ipairs(order) do
+        if k == key then
+            local j = i + delta
+            if order[j] then
+                order[i], order[j] = order[j], order[i]
+                SetScrollOrder(order)
+            end
+            return
+        end
+    end
+end
+
+-- Moves a stat to just before another one (before = nil: to the end).
+function ns.MoveScrollStatTo(key, before)
+    if key == before then return end
+    local order = ns.ScrollOrder()
+    for i, k in ipairs(order) do
+        if k == key then
+            table.remove(order, i)
+            break
+        end
+    end
+    local at = #order + 1
+    for i, k in ipairs(order) do
+        if k == before then
+            at = i
+            break
+        end
+    end
+    table.insert(order, at, key)
+    SetScrollOrder(order)
+end
+
+function ns.ResetScrollOrder()
+    SetScrollOrder(nil)
 end
 
 -- Moves a button one place towards the start (-1) or the end (1), past
@@ -1348,6 +1593,7 @@ local function ProfileChanged()
     if InCombatLockdown() then
         ns.Refuse(L["The bar will change when combat ends."], true)
     end
+    ns.Scan() -- hidden items and the scroll order are the profile's
     ns.UpdateBar()
     if ns.RefreshWindow then ns.RefreshWindow() end
     if ns.RefreshMinimapButton then ns.RefreshMinimapButton() end

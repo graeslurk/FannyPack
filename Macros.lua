@@ -29,8 +29,14 @@ local function MacroBody(key)
     if not entry then return lines[1] end
     local item = "item:" .. entry.itemID
     if kind.slot then
-        -- Stones, oils and poisons go on the weapon (Shift: the off-hand).
-        lines[#lines + 1] = "/use " .. item
+        -- Stones, oils and poisons go on the weapon (Shift: the off-hand,
+        -- with a stone of its own if it's another kind of weapon).
+        local off = kind.shiftSlot and ns.OffHandItemFor(key)
+        if off and off ~= entry then
+            lines[#lines + 1] = "/use [mod:shift] item:" .. off.itemID .. "; " .. item
+        else
+            lines[#lines + 1] = "/use " .. item
+        end
         lines[#lines + 1] = kind.shiftSlot and ("/use [mod:shift] " .. kind.shiftSlot .. "; " .. kind.slot)
             or ("/use " .. kind.slot)
     elseif kind.self then
