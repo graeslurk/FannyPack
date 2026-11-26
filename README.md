@@ -54,8 +54,13 @@ Turn on **Use on your target** to put bandages, cures and scrolls on a friendly
 target instead; with no target, or an enemy targeted, they still go on you.
 - **Weapon stone or oil**: sharpening stones, weightstones, wizard oils and
   mana oils. Click to put one on your main hand weapon, Shift-click for your
-  off-hand. It glows gold while a weapon in your hands has nothing on it, and
-  silver when it's running out
+  off-hand. It only uses stones that fit the weapon: sharpening stones on
+  axes, swords, daggers and polearms, weightstones on maces and staves, so a
+  sword and a mace each get their own. Casters get oils first (mages and
+  warlocks wizard oil, priests and druids mana oil), the rest stones; change
+  it under **Weapon stone or oil** on the options' Items page. It glows gold
+  while a weapon in your hands has nothing on it, and silver when it's
+  running out
 - **Main-hand poison** and **Off-hand poison** (rogues only): one click puts
   the poison on that hand. Each button has its own poison, and glows while
   its hand has nothing on it

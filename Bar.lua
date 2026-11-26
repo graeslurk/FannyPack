@@ -1371,7 +1371,10 @@ local function SecureUpdate()
             button:SetAttribute("type1", "macro")
             button:SetAttribute("macrotext1", use and use .. kind.slot or nil)
             if kind.shiftSlot then
-                button:SetAttribute("shift-macrotext1", use and use .. kind.shiftSlot or nil)
+                -- The off-hand may want another stone (a sword and a mace).
+                local off = ns.OffHandItemFor(key)
+                local offUse = off and "/use item:" .. off.itemID .. "\n/use "
+                button:SetAttribute("shift-macrotext1", offUse and offUse .. kind.shiftSlot or nil)
             end
         elseif kind.combo then
             -- Eat & drink: the Food and Drink buttons' items in one press.
@@ -2179,6 +2182,8 @@ events:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player") -- weapons swapped,
 pcall(events.RegisterEvent, events, "WEAPON_ENCHANT_CHANGED")
 -- A stone or oil wearing off doesn't always send an event, and Well Fed
 -- running low sends none, so look now and then.
+local heldMain, heldOff -- the weapons in your hands, by item ID
+
 -- Buffs come, go and start running out without the bags changing, so check
 -- whether a "Hide while on" button should appear or go, and rearrange the
 -- bar if so. Not in combat, when the buttons can't change.
@@ -2265,6 +2270,12 @@ events:SetScript("OnEvent", function(_, event)
             picker:Hide() -- its button is about to disappear
         end
     elseif bar then
+        -- Another weapon in hand: which stones fit has changed (see ns.Scan).
+        local main, off = GetInventoryItemID("player", 16), GetInventoryItemID("player", 17)
+        if main ~= heldMain or off ~= heldOff then
+            heldMain, heldOff = main, off
+            ns.QueueScan()
+        end
         -- Cooldowns, Recently Bandaged, and Well Fed and weapon stones for the reminders.
         for _, button in pairs(buttons) do UpdateLook(button) end
         UpdateFlyout()

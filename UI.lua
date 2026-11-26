@@ -1016,6 +1016,15 @@ local function CreateUsingItemsCard(parent)
         function(p)
             return CreateToggle(p, function() return ns.db.useOnTarget end, ns.SetUseOnTarget)
         end)
+    AddRow(card, L["Weapon stone or oil"],
+        L["What the button uses first when you carry more than one kind. Stones always go on a weapon they fit: sharpening stones on blades, weightstones on maces and staves. Shift-click puts one on your off-hand."],
+        function(p)
+            return CreateSegmented(p, {
+                { value = "stone", label = L["Stones"] },
+                { value = "wizard", label = L["Wizard oil"] },
+                { value = "mana", label = L["Mana oil"] },
+            }, ns.WeaponPreference, ns.SetWeaponPreference, 90)
+        end, true)
     AddRow(card, L["Hide empty buttons"], L["Hide buttons for things you don't carry, instead of fading them."],
         function(p)
             return CreateToggle(p, function() return ns.db.hideEmpty end, ns.SetHideEmpty)
