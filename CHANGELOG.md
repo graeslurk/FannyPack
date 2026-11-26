@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+Fixed:
+- **Scrolls no longer glow while a class buff covers them**: with Power Word: Fortitude or Prayer of Fortitude on you, a Scroll of Stamina can't be used (the game says a more powerful spell is already active), so its button stays quiet. The same goes for Scrolls of Intellect under Arcane Intellect or Arcane Brilliance, and Scrolls of Spirit under Divine Spirit or Prayer of Spirit. With **Hide while on**, the button switches to another scroll you can use, or hides if there is none
+
 ## 1.8.1
 
 1.8.0 was published by mistake without its new features; this is the release it should have been.

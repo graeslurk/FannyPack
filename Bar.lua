@@ -544,6 +544,46 @@ local function BuffTimeLeft(spellID, englishName)
     return AuraTimeLeft(ns.SpellName(spellID) or englishName)
 end
 
+-- Class buffs a scroll's buff can't go on top of: with Power Word:
+-- Fortitude on you, a Scroll of Stamina only tells you a more powerful
+-- spell is already active. Each: the scroll's buff, then the class buffs
+-- that cover it, as spell IDs with English names for when the game
+-- doesn't know the spell.
+local COVERED_BY = {
+    { 8099, "Stamina", { { 1243, "Power Word: Fortitude" }, { 21562, "Prayer of Fortitude" } } },
+    { 8096, "Intellect", { { 1459, "Arcane Intellect" }, { 23028, "Arcane Brilliance" } } },
+    { 8112, "Spirit", { { 14752, "Divine Spirit" }, { 27681, "Prayer of Spirit" } } },
+}
+local coveredBy -- [buff name] = { class buff names }, in the client's language
+
+local function CoveringBuffs(name)
+    if not coveredBy then
+        coveredBy = {}
+        for _, entry in ipairs(COVERED_BY) do
+            local names = {}
+            for _, buff in ipairs(entry[3]) do
+                names[#names + 1] = ns.SpellName(buff[1]) or buff[2]
+            end
+            coveredBy[ns.SpellName(entry[1]) or entry[2]] = names
+        end
+    end
+    return coveredBy[name]
+end
+
+-- Time left on an item's buff, as AuraTimeLeft. While a class buff that
+-- covers it is on you, it never runs out: the item can't add anything.
+local function ItemBuffTimeLeft(name)
+    local left = AuraTimeLeft(name)
+    if left then return left end
+    local covering = CoveringBuffs(name)
+    if covering then
+        for _, buff in ipairs(covering) do
+            if AuraTimeLeft(buff) then return math.huge end
+        end
+    end
+    return nil
+end
+
 -- For the debug report: your buffs as the game gives them to addons, and
 -- what the buff reminders make of them. out(line) adds a line.
 function ns.AuraDebug(out)
@@ -573,8 +613,9 @@ function ns.AuraDebug(out)
             byName = not ok and "refused" or (aura and "found" or "not found")
         end
         local left = AuraTimeLeft(name)
-        out(("  %s looks for \"%s\": by name %s; time left %s"):format(label, name, byName,
-            left == nil and "none (glows gold)" or left == math.huge and "unknown" or ("%.1f min"):format(left / 60)))
+        local state = left == nil and "none (glows gold)" or left == math.huge and "unknown" or ("%.1f min"):format(left / 60)
+        if left == nil and ItemBuffTimeLeft(name) then state = "none, but a class buff covers it (no glow)" end
+        out(("  %s looks for \"%s\": by name %s; time left %s"):format(label, name, byName, state))
     end
     out(("Glow: %s, %s%%, pulse %s; sparkle from %s"):format(ns.db.glowStyle, tostring(ns.db.glowStrength),
         tostring(ns.db.glowPulse), ns.ProcKind and ns.ProcKind() or "?"))
@@ -709,7 +750,7 @@ local function WantsGlow(button, empty)
         if not button.itemID or (not custom and not ns.db[GLOW_SETTING[key]]) then return nil end
         local spell = GetItemSpell(button.itemID)
         local minutes = ns.db[MINUTES_SETTING[key] or (custom and "otherBuffMinutes") or "elixirMinutes"]
-        return spell and GlowFor(AuraTimeLeft(spell), minutes) or nil
+        return spell and GlowFor(ItemBuffTimeLeft(spell), minutes) or nil
     end
     return nil
 end
@@ -741,7 +782,7 @@ local function BuffIsOn(key, itemID)
     local spell = itemID and GetItemSpell(itemID)
     if not spell then return false end
     local minutes = ns.db[MINUTES_SETTING[key] or "elixirMinutes"]
-    return GlowFor(AuraTimeLeft(spell), minutes) == nil
+    return GlowFor(ItemBuffTimeLeft(spell), minutes) == nil
 end
 
 ns.BuffIsOn = BuffIsOn -- also used to pick an elixir or scroll that isn't on you yet
