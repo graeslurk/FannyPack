@@ -1292,6 +1292,185 @@ local function CreateRemindersCard(parent)
     return card
 end
 
+-- The order the scroll button uses your scrolls in, by stat: the highest
+-- rank of the first stat you carry. Starts in your class's order; dragged
+-- or moved with the arrows, it's the profile's own.
+local function CreateScrollOrderCard(parent)
+    local card = CreateCard(parent, L["Scroll order"], CARD_WIDTH)
+
+    local intro = Text(card, 12, C.muted)
+    intro:SetPoint("TOPLEFT", 20, -52)
+    intro:SetText(L["The scroll button uses the highest rank of the first stat you carry. Drag a row to move it. It starts in your class's order; with \"Hide while on\" it moves on to the next stat whose buff you don't have."])
+
+    local RESET_WIDTH = 110
+    local reset = CreateButton(card, L["Class order"], RESET_WIDTH)
+    reset:SetPoint("TOPRIGHT", -20, -48)
+    reset:SetScript("OnClick", function() ns.ResetScrollOrder() end)
+    reset:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(L["Class order"], 1, 1, 1)
+        GameTooltip:AddLine(L["Put the scrolls back in your class's order."], 0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+    end)
+    reset:HookScript("OnLeave", GameTooltip_Hide)
+    updaters[#updaters + 1] = function() reset:SetEnabled(not ns.ScrollOrderIsClass()) end
+
+    local rows = {} -- [stat key] = row
+    local top -- where the list starts, under the intro; set by Relayout
+    local ROW_HEIGHT, ROW_STEP = 28, 32
+    local count = #ns.SCROLL_STATS
+    local dragged, dropAt -- the row being dragged, and the place it would land (1 = first)
+
+    -- The rows in your order. While a row is dragged it's left out, and the
+    -- others leave a gap where it would land.
+    local function Layout()
+        if not top then return end
+        local i = 0
+        for _, key in ipairs(ns.ScrollOrder()) do
+            local row = rows[key]
+            if row ~= dragged then
+                i = i + 1
+                if dragged and i == dropAt then i = i + 1 end -- the gap
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT", 20, top - (i - 1) * ROW_STEP)
+                row.up:SetEnabled(i > 1)
+                row.down:SetEnabled(i < count)
+            end
+        end
+    end
+
+    -- How many of each you carry, dimming the stats you have none of.
+    local function Counts()
+        local carried = {}
+        for _, entry in ipairs(ns.ListFor("scroll")) do
+            if entry.stat then carried[entry.stat] = (carried[entry.stat] or 0) + entry.count end
+        end
+        for key, row in pairs(rows) do
+            local n = carried[key] or 0
+            row.count:SetText(n > 0 and n or "")
+            row.icon:SetDesaturated(n == 0)
+            row.name:SetTextColor(unpack(n > 0 and C.text or C.muted))
+        end
+    end
+
+    local function CursorY()
+        local _, y = GetCursorPosition()
+        return y / card:GetEffectiveScale()
+    end
+
+    local StopDrag
+
+    local function DragUpdate(row)
+        if not IsMouseButtonDown("LeftButton") then
+            StopDrag(row)
+            return
+        end
+        local rowTop = CursorY() - card:GetTop() + row.grabOffset
+        rowTop = math.max(top - (count - 1) * ROW_STEP, math.min(top, rowTop))
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 20, rowTop)
+        local at = math.floor((top - rowTop) / ROW_STEP + 0.5) + 1
+        if at ~= dropAt then
+            dropAt = at
+            Layout()
+        end
+    end
+
+    local function StartDrag(row)
+        if not top or dragged then return end
+        for i, key in ipairs(ns.ScrollOrder()) do
+            if key == row.key then row.startAt = i end
+        end
+        dragged, dropAt = row, row.startAt
+        row.grabOffset = row:GetTop() - CursorY()
+        row:SetFrameLevel(card:GetFrameLevel() + 20)
+        SetColor(row.bg, C.controlHover)
+        row:SetScript("OnUpdate", DragUpdate)
+    end
+
+    function StopDrag(row)
+        if dragged ~= row then return end
+        row:SetScript("OnUpdate", nil)
+        row:SetFrameLevel(card:GetFrameLevel() + 1)
+        SetColor(row.bg, C.control)
+        local at = dropAt
+        dragged, dropAt = nil, nil
+        if not at or at == row.startAt then -- let go where it was
+            Layout()
+            return
+        end
+        -- Land before the stat now at that place (counting without this one).
+        local before, i = nil, 0
+        for _, key in ipairs(ns.ScrollOrder()) do
+            if key ~= row.key then
+                i = i + 1
+                if i == at then
+                    before = key
+                    break
+                end
+            end
+        end
+        ns.MoveScrollStatTo(row.key, before)
+    end
+
+    for _, stat in ipairs(ns.SCROLL_STATS) do
+        local row = CreateFrame("Frame", nil, card)
+        row:SetSize(CARD_WIDTH - 40, ROW_HEIGHT)
+        row.key = stat.key
+        row.bg = Rounded(row, "BACKGROUND", C.control)
+        row:EnableMouse(true)
+        MakeRowDraggable(row, StartDrag, StopDrag)
+
+        for dot = 0, 5 do -- the grip
+            local texture = row:CreateTexture(nil, "ARTWORK")
+            texture:SetSize(2, 2)
+            texture:SetColorTexture(C.muted[1], C.muted[2], C.muted[3], 0.8)
+            texture:SetPoint("LEFT", 7 + (dot % 2) * 4, 4 - math.floor(dot / 2) * 4)
+        end
+
+        local icon = row:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(22, 22)
+        icon:SetPoint("LEFT", 24, 0)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:SetTexture(select(5, C_Item.GetItemInfoInstant(stat.item)))
+        row.icon = icon
+
+        row.down = CreateArrow(row, false, function() ns.MoveScrollStat(stat.key, 1) end)
+        row.down:SetPoint("RIGHT", -8, 0)
+        row.up = CreateArrow(row, true, function() ns.MoveScrollStat(stat.key, -1) end)
+        row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
+
+        local carried = Text(row, 12, C.muted)
+        carried:SetPoint("RIGHT", row.up, "LEFT", -12, 0)
+        carried:SetJustifyH("RIGHT")
+        row.count = carried
+
+        local name = Text(row, 14, C.text)
+        name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+        name:SetPoint("RIGHT", carried, "LEFT", -8, 0)
+        name:SetWordWrap(false)
+        name:SetText(stat.name)
+        row.name = name
+
+        rows[stat.key] = row
+    end
+    updaters[#updaters + 1] = Layout
+    updaters[#updaters + 1] = Counts
+
+    function card:Relayout(width)
+        self:SetWidth(width)
+        intro:SetWidth(width - 40 - RESET_WIDTH - 16)
+        top = math.min(-52 - intro:GetStringHeight(), -48 - reset:GetHeight()) - 14
+        for _, row in pairs(rows) do row:SetWidth(width - 40) end
+        Layout()
+        self:SetHeight(-top + count * ROW_STEP - (ROW_STEP - ROW_HEIGHT) + 20)
+    end
+    card:Relayout(CARD_WIDTH)
+    Counts()
+    reset:SetEnabled(not ns.ScrollOrderIsClass())
+    return card
+end
+
 -- A small "- 5 +" control for a number from 0 (shown as "off") up.
 local function CreateStepper(parent, get, set)
     local holder = CreateFrame("Frame", nil, parent)
@@ -2179,7 +2358,7 @@ local PAGES = {
     { key = "look", title = L["Look"], subtitle = L["Shape, size & fading"], icon = "icon-look",
         cards = { CreateLookCard } },
     { key = "reminders", title = L["Reminders"], subtitle = L["Glows & low stock"], icon = "icon-clock",
-        cards = { CreateGlowLookCard, CreateRemindersCard, CreateLowStockCard } },
+        cards = { CreateGlowLookCard, CreateRemindersCard, CreateScrollOrderCard, CreateLowStockCard } },
     { key = "profiles", title = L["Profiles"], subtitle = L["Setups for roles & characters"], icon = "icon-profile",
         cards = { CreateProfilesCard } },
 }

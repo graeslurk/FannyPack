@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+New:
+- **Scroll order**: the scroll button now uses your class's scrolls first: Strength for warriors, Agility for hunters and rogues, Intellect for casters, and so on, the highest rank of each first. Before, every class got Protection first. To sort them yourself, say Intellect and Spirit first on a healing druid, drag the stats under **Scroll order** on the Reminders page. The order is saved in your profile, so a healing and a damage profile can each have their own, and **Class order** puts your class's back. With **Hide while on**, the button moves on to the next stat whose buff you don't have
+
 Fixed:
 - **Scrolls no longer glow while a class buff covers them**: with Power Word: Fortitude or Prayer of Fortitude on you, a Scroll of Stamina can't be used (the game says a more powerful spell is already active), so its button stays quiet. The same goes for Scrolls of Intellect under Arcane Intellect or Arcane Brilliance, and Scrolls of Spirit under Divine Spirit or Prayer of Spirit. With **Hide while on**, the button switches to another scroll you can use, or hides if there is none
+- Switching, copying or resetting a profile now brings its hidden items along at once, instead of after your bags next changed
 
 ## 1.8.1
 

@@ -41,7 +41,11 @@ just to heal up. Made for **WoW Forever**.
   the best elixir the first doesn't use. They glow while their buff isn't on
   you
 - **Scroll**: Scrolls of Agility, Intellect, Protection, Spirit, Stamina and
-  Strength, used on you
+  Strength, used on you. It takes the stats in your class's order (Strength
+  first for a warrior, Agility for a hunter or rogue, Intellect for casters);
+  sort them yourself under **Scroll order** on the options' Reminders page.
+  It doesn't glow for a scroll a class buff already covers, like Stamina
+  under Power Word: Fortitude
 - **Other buffs**: anything else that raises a stat for a while, like
   Rumsey Rum Black Label, juju and buff drinks from fishing. It glows while
   its buff isn't on you
