@@ -11,6 +11,16 @@ local L = ns.L
 -- new; points: the card's lines, each with the options page it's on.
 ns.WHATS_NEW = {
     {
+        version = "1.9.0",
+        chat = L["scrolls in your class's order, and weapon stones that fit your weapon"],
+        points = {
+            { text = L["Scroll order: the scroll button uses your class's scrolls first. Drag the stats to change the order."],
+                page = "reminders" },
+            { text = L["Weapon stones: only stones that fit your weapon, and oils first for casters. Choose stones or oils first."],
+                page = "items" },
+        },
+    },
+    {
         version = "1.8.1",
         chat = L["make your own buttons for any items you like, and Masque skins"],
         points = {

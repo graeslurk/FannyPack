@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9.0
 
 New:
 - **Scroll order**: the scroll button now uses your class's scrolls first: Strength for warriors, Agility for hunters and rogues, Intellect for casters, and so on, the highest rank of each first. Before, every class got Protection first. To sort them yourself, say Intellect and Spirit first on a healing druid, drag the stats under **Scroll order** on the Reminders page. The order is saved in your profile, so a healing and a damage profile can each have their own, and **Class order** puts your class's back. With **Hide while on**, the button moves on to the next stat whose buff you don't have
