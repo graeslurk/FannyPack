@@ -17,7 +17,10 @@ just to heal up. Made for **WoW Forever**.
 - **Neat in combat**: food and drink step aside during a fight and the rest
   of the bar closes up
 - **Picks the right item for you**: each button uses the best one you carry
-  that you can use, and you can always choose another
+  that you can use, scrolls in your class's order and stones that fit your
+  weapon, and you can always choose another
+- **Your own buttons** for any items, like raid potions or a trinket, and
+  **Masque** skins to match your action bars
 
 ## The buttons
 
@@ -49,9 +52,6 @@ just to heal up. Made for **WoW Forever**.
 - **Other buffs**: anything else that raises a stat for a while, like
   Rumsey Rum Black Label, juju and buff drinks from fishing. It glows while
   its buff isn't on you
-
-Turn on **Use on your target** to put bandages, cures and scrolls on a friendly
-target instead; with no target, or an enemy targeted, they still go on you.
 - **Weapon stone or oil**: sharpening stones, weightstones, wizard oils and
   mana oils. Click to put one on your main hand weapon, Shift-click for your
   off-hand. It only uses stones that fit the weapon: sharpening stones on
@@ -76,6 +76,9 @@ target instead; with no target, or an enemy targeted, they still go on you.
   cooldown; click one to use it. Right-click it to hide camp gear you don't
   want in the row. It's off the bar in combat by default, and
   in dungeons, raids, cities and inns, where you can't camp
+
+Turn on **Use on your target** to put bandages, cures and scrolls on a friendly
+target instead; with no target, or an enemy targeted, they still go on you.
 
 Turn on **Hide while on** for a reminder and its buttons stay off the bar
 while the buff is on you, coming back when it's gone or running out. For the
@@ -162,7 +165,7 @@ Type `/fannypack` (or click the minimap button) to open the options.
 
 **How it's laid out**
 - **Sort the buttons** in any order by dragging them in the options list, and
-  turn each one on or off per character
+  turn each one on or off
 - Let the bar **grow** right, left, down or up from its first button. The
   first button always stays put: turning buttons on or off, or hiding them
   in combat, never moves it
@@ -178,12 +181,12 @@ Type `/fannypack` (or click the minimap button) to open the options.
   bars. The skin then decides the shape and border
 - **Fade out of combat**: the bar disappears outside combat and comes back
   when you hover over it or a fight starts. A glowing reminder stays visible
-- The buff food and weapon **reminders** can each be turned off
+- Each **reminder** glow can be turned off on the Reminders page
 
 **Profiles**
 - Keep a whole bar setup per role, say one for tanking and one for healing:
-  which buttons show, their order, the layout, the look and the low-stock
-  limits
+  which buttons show, their order, the layout, the look, the low-stock
+  limits, the scroll order and stones or oils first
 - Each character uses a profile (Default to start). Switch, create, copy,
   reset and delete them in the options, or type `/fannypack profile <name>`
   (handy in a macro)
