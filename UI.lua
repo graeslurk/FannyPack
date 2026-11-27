@@ -495,6 +495,35 @@ local function AddRow(card, title, description, makeControl, stacked)
     return descText
 end
 
+-- What's new on a setting: a gold dot after the title of the row just
+-- added, or of the card for a card that is one setting (NewsCardDot),
+-- shown while a point on the What's new card names its key (point.setting
+-- in News.lua), so until "Got it". As Pocket Goblin's.
+local newsDots = {} -- { dot, key }
+local function NewsDot(card, key)
+    local row = card.rows[#card.rows]
+    row.newsDot = Icon(card, "circle", 7, C.gold)
+    row.newsDot:Hide()
+    newsDots[#newsDots + 1] = { row.newsDot, key }
+end
+
+local function NewsCardDot(card, key)
+    local dot = Icon(card, "circle", 7, C.gold)
+    dot:SetPoint("LEFT", card.title, "RIGHT", 6, 0)
+    dot:Hide()
+    newsDots[#newsDots + 1] = { dot, key }
+end
+
+local function UpdateNewsDots()
+    local keys = {}
+    for _, entry in ipairs(ns.UnseenNews()) do
+        for _, point in ipairs(entry.points) do
+            if point.setting then keys[point.setting] = true end
+        end
+    end
+    for _, item in ipairs(newsDots) do item[1]:SetShown(keys[item[2]] or false) end
+end
+
 -- startY: where the first row goes, for cards with other content on top.
 local function LayoutCard(card, startY)
     local y = startY or -56
@@ -507,6 +536,13 @@ local function LayoutCard(card, startY)
         local textHeight = row.title:GetStringHeight() + 4 + row.desc:GetStringHeight()
         local rowHeight
         row.title:ClearAllPoints()
+        if row.newsDot then
+            -- Right after the title's text, level with its first line.
+            local _, fontHeight = row.title:GetFont()
+            row.newsDot:ClearAllPoints()
+            row.newsDot:SetPoint("LEFT", row.title, "TOPLEFT",
+                math.min(row.title:GetStringWidth(), textWidth) + 6, -(fontHeight or 14) / 2 - 1)
+        end
         if row.stacked then
             rowHeight = textHeight + 10 + control:GetHeight()
             row.title:SetPoint("TOPLEFT", 20, y)
@@ -651,6 +687,7 @@ local function CreateBarCard(parent)
             end)
             return button
         end)
+    NewsDot(card, "tour")
     AddRow(card, L["Tell me about new features"],
         L["After an update with new features, one line in chat says what's new. This window shows it either way."],
         function(p)
@@ -920,6 +957,7 @@ end
 -- keep, which you drag onto a bar, and a menu to add one.
 local function CreateMacrosCard(parent)
     local card = CreateCard(parent, L["Macros"], CARD_WIDTH)
+    NewsCardDot(card, "macros")
     local intro = Text(card, 12, C.muted)
     intro:SetPoint("TOPLEFT", 20, -52)
     intro:SetText(L["Fanny Pack keeps a macro for each button you add here, always using the item that button would use. Drag a macro onto any action bar. They're this character's macros."])
@@ -1025,6 +1063,7 @@ local function CreateUsingItemsCard(parent)
                 { value = "mana", label = L["Mana oil"] },
             }, ns.WeaponPreference, ns.SetWeaponPreference, 90)
         end, true)
+    NewsDot(card, "weaponPreference")
     AddRow(card, L["Hide empty buttons"], L["Hide buttons for things you don't carry, instead of fading them."],
         function(p)
             return CreateToggle(p, function() return ns.db.hideEmpty end, ns.SetHideEmpty)
@@ -1172,6 +1211,7 @@ end
 -- (missing) and a silver one (running out).
 local function CreateGlowLookCard(parent)
     local card = CreateCard(parent, L["Glow look"], CARD_WIDTH)
+    NewsCardDot(card, "glowLook")
     local preview = ns.CreateGlowPreview(card)
     preview:SetPoint("TOPRIGHT", -20, -14)
     updaters[#updaters + 1] = function() preview:Refresh() end
@@ -1306,6 +1346,7 @@ end
 -- or moved with the arrows, it's the profile's own.
 local function CreateScrollOrderCard(parent)
     local card = CreateCard(parent, L["Scroll order"], CARD_WIDTH)
+    NewsCardDot(card, "scrollOrder")
 
     local intro = Text(card, 12, C.muted)
     intro:SetPoint("TOPLEFT", 20, -52)
@@ -2382,6 +2423,7 @@ local function LayoutPage(key)
     local page = pages[key]
     local width = window:GetWidth() - SIDEBAR_WIDTH - 1 - SCROLLBAR - 40
     local y = -20
+    UpdateNewsDots()
     if newsCard then
         local news = ns.UnseenNews()
         newsCard:SetShown(#news > 0)
