@@ -1054,14 +1054,21 @@ local function CreateUsingItemsCard(parent)
         function(p)
             return CreateToggle(p, function() return ns.db.useOnTarget end, ns.SetUseOnTarget)
         end)
-    AddRow(card, L["Weapon stone or oil"],
-        L["What the button uses first when you carry more than one kind. Stones always go on a weapon they fit: sharpening stones on blades, weightstones on maces and staves. Shift-click puts one on your off-hand."],
+    -- Mages also have imbue scrolls, which replace an oil like any stone.
+    local mage = select(2, UnitClass("player")) == "MAGE"
+    local weaponText = L["What the button uses first when you carry more than one kind. Stones always go on a weapon they fit: sharpening stones on blades, weightstones on maces and staves. Shift-click puts one on your off-hand."]
+    if mage then
+        weaponText = weaponText .. " " .. L["Imbue scrolls only go on the weapon they're for: a staff, dagger or sword."]
+    end
+    AddRow(card, L["Weapon stone or oil"], weaponText,
         function(p)
-            return CreateSegmented(p, {
+            local choices = {
                 { value = "stone", label = L["Stones"] },
                 { value = "wizard", label = L["Wizard oil"] },
                 { value = "mana", label = L["Mana oil"] },
-            }, ns.WeaponPreference, ns.SetWeaponPreference, 90)
+            }
+            if mage then choices[#choices + 1] = { value = "imbue", label = L["Imbues"] } end
+            return CreateSegmented(p, choices, ns.WeaponPreference, ns.SetWeaponPreference, 90)
         end, true)
     NewsDot(card, "weaponPreference")
     AddRow(card, L["Hide empty buttons"], L["Hide buttons for things you don't carry, instead of fading them."],
@@ -1255,6 +1262,8 @@ local REMINDERS = {
     { name = L["Elixirs"], icon = 2454, minutes = "elixir", setting = "elixirGlow", set = "SetElixirGlow" },
     { name = L["Scrolls"], icon = 1181, minutes = "scroll", setting = "scrollGlow", set = "SetScrollGlow" },
     { name = L["Other buffs"], icon = 21151, minutes = "otherBuff", setting = "otherBuffGlow", set = "SetOtherBuffGlow" },
+    { name = L["Familiars"], icon = 277483, minutes = "familiar", setting = "familiarGlow", set = "SetFamiliarGlow",
+        class = "MAGE" },
     { name = L["Weapons"], icon = 2862, minutes = "weapon", setting = "weaponGlow", set = "SetWeaponGlow" },
     -- No "running out" for cures: they're for a debuff you have, not a buff.
     { name = L["Cures"], icon = 6452, minutes = "cure", setting = "cureGlow", set = "SetCureGlow" },
@@ -1276,45 +1285,48 @@ local function CreateRemindersCard(parent)
     onHeading:SetText(L["Glow"])
 
     local rows = {}
+    local playerClass = select(2, UnitClass("player"))
     for _, info in ipairs(REMINDERS) do
-        local row = CreateFrame("Frame", nil, card)
-        row:SetHeight(32)
-        Rounded(row, "BACKGROUND", C.control)
-        local icon = row:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(22, 22)
-        icon:SetPoint("LEFT", 8, 0)
-        icon:SetTexture(select(5, C_Item.GetItemInfoInstant(info.icon)))
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        if not info.class or info.class == playerClass then
+            local row = CreateFrame("Frame", nil, card)
+            row:SetHeight(32)
+            Rounded(row, "BACKGROUND", C.control)
+            local icon = row:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(22, 22)
+            icon:SetPoint("LEFT", 8, 0)
+            icon:SetTexture(select(5, C_Item.GetItemInfoInstant(info.icon)))
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-        local toggle = CreateToggle(row, function() return ns.db[info.setting] end, function(value)
-            ns[info.set](value)
-            if ns.RefreshWindow then ns.RefreshWindow() end -- dims the slider
-        end)
-        toggle:SetPoint("RIGHT", -8, 0)
-        local hide = CreateToggle(row, function() return ns.db.hideWhileOn[info.minutes] or false end,
-            function(value)
-                ns.SetHideWhileOn(info.minutes, value)
+            local toggle = CreateToggle(row, function() return ns.db[info.setting] end, function(value)
+                ns[info.set](value)
                 if ns.RefreshWindow then ns.RefreshWindow() end -- dims the slider
             end)
-        hide:SetPoint("RIGHT", toggle, "LEFT", -GAP, 0)
-        local slider
-        if ns.RUNNING_OUT[info.minutes] then
-            slider = CreateSlider(row, 0, ns.RUNNING_OUT[info.minutes],
-                function() return ns.db[info.minutes .. "Minutes"] end,
-                function(value) ns.SetRunningOut(info.minutes, value) end, SLIDER_WIDTH)
-            slider:SetPoint("RIGHT", hide, "LEFT", -16, 0)
-            -- The "running out" time matters for the glow and for hiding.
-            updaters[#updaters + 1] = function()
-                slider:SetAlpha((ns.db[info.setting] or ns.db.hideWhileOn[info.minutes]) and 1 or 0.4)
+            toggle:SetPoint("RIGHT", -8, 0)
+            local hide = CreateToggle(row, function() return ns.db.hideWhileOn[info.minutes] or false end,
+                function(value)
+                    ns.SetHideWhileOn(info.minutes, value)
+                    if ns.RefreshWindow then ns.RefreshWindow() end -- dims the slider
+                end)
+            hide:SetPoint("RIGHT", toggle, "LEFT", -GAP, 0)
+            local slider
+            if ns.RUNNING_OUT[info.minutes] then
+                slider = CreateSlider(row, 0, ns.RUNNING_OUT[info.minutes],
+                    function() return ns.db[info.minutes .. "Minutes"] end,
+                    function(value) ns.SetRunningOut(info.minutes, value) end, SLIDER_WIDTH)
+                slider:SetPoint("RIGHT", hide, "LEFT", -16, 0)
+                -- The "running out" time matters for the glow and for hiding.
+                updaters[#updaters + 1] = function()
+                    slider:SetAlpha((ns.db[info.setting] or ns.db.hideWhileOn[info.minutes]) and 1 or 0.4)
+                end
             end
-        end
 
-        local name = Text(row, 14, C.text)
-        name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
-        name:SetPoint("RIGHT", slider or hide, "LEFT", -8, 0)
-        name:SetWordWrap(false)
-        name:SetText(info.name)
-        rows[#rows + 1] = row
+            local name = Text(row, 14, C.text)
+            name:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+            name:SetPoint("RIGHT", slider or hide, "LEFT", -8, 0)
+            name:SetWordWrap(false)
+            name:SetText(info.name)
+            rows[#rows + 1] = row
+        end
     end
 
     function card:Relayout(width)

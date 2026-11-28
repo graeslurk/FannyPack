@@ -53,6 +53,8 @@ ns.KINDS = {
     { key = "elixir", name = L["Elixir"], icon = 2454, buff = true }, -- elixirs and flasks, see Classify
     { key = "elixir2", name = L["Second elixir"], icon = 5997, list = "elixir", buff = true },
     { key = "scroll", name = L["Scroll"], icon = 1181, self = true, buff = true }, -- see SCROLLS
+    -- Forever's familiar scrolls: a summon with an hour-long Intellect buff.
+    { key = "familiar", name = L["Familiar"], icon = 277483, class = "MAGE", buff = true }, -- see MAGE_SCROLLS
     -- Anything else that gives a timed buff, like Rumsey Rum or juju (see Classify).
     { key = "otherBuff", name = L["Other buffs"], icon = 21151, buff = true, lowStock = 2 },
     { key = "weapon", name = L["Weapon stone or oil"], icon = 2862, slot = 16, shiftSlot = 17 }, -- see WEAPON_ITEMS
@@ -97,12 +99,34 @@ local WEAPON_ITEMS = {
     [3824] = "oil", [3829] = "oil", -- Shadow Oil, Frost Oil
 }
 
+-- Forever's mage scrolls (from Comprehension), for mages only. Imbues go
+-- on a weapon like an oil, and replace it: staff, dagger or sword, the
+-- weapon each is for. Familiars get their own button. The rest (Cryoblast,
+-- Minor Evocation, the teleport, lock and weapon-making scrolls) get none.
+-- Newer ones are caught by their names and "Classes:" line (see Classify).
+local MAGE_SCROLLS = {
+    [274947] = "staff", [277485] = "staff", [277486] = "staff", [277487] = "staff", -- Lesser Flame, Frost, Striking, Baleflame
+    [277494] = "staff", [277495] = "staff", [277496] = "staff", [277497] = "staff", -- Accuracy, Quickening, Balefrost, Flame
+    [277500] = "staff", [277501] = "staff", [277502] = "staff", -- Greater Flame, Greater Frost, Precision
+    [275067] = "dagger", [277488] = "dagger", [277498] = "dagger", -- Chillknife, Iceknife, Manablade
+    [277489] = "sword", -- Spark
+    [275069] = "familiar", [277483] = "familiar", [277493] = "familiar", -- Rat, Frog, Cat
+    [213564] = false, [215257] = false, [213548] = false, [277492] = false, -- Minor Evocation, Comprehension, Liminal Passage, Khadgar's Unlocking
+    [217495] = false, [277499] = false, [277484] = false, [277491] = false, -- Cryoblast, Greater Cryoblast, Confuse Beast, Rebuke Elemental
+    [277490] = false, [217496] = false, [277504] = false, -- the Saber, the Blade, Wit
+}
+
+-- The weapons each kind of imbue goes on (Enum.ItemWeaponSubclass).
+local IMBUE_WEAPONS = { staff = { [10] = true }, dagger = { [15] = true }, sword = { [7] = true, [8] = true } }
+
 -- Which kind of weapon item comes first, by what you'd rather have on your
--- weapon (see ns.WeaponPreference): stones, wizard oil or mana oil.
+-- weapon (see ns.WeaponPreference): stones, wizard oil, mana oil or a mage
+-- imbue scroll.
 local WEAPON_PREFERENCE_ORDER = {
-    stone = { stone = 1, oil = 2, wizard = 3, mana = 4 },
-    wizard = { wizard = 1, mana = 2, stone = 3, oil = 4 },
-    mana = { mana = 1, wizard = 2, stone = 3, oil = 4 },
+    stone = { stone = 1, oil = 2, wizard = 3, mana = 4, imbue = 5 },
+    wizard = { wizard = 1, mana = 2, imbue = 3, stone = 4, oil = 5 },
+    mana = { mana = 1, wizard = 2, imbue = 3, stone = 4, oil = 5 },
+    imbue = { imbue = 1, wizard = 2, mana = 3, stone = 4, oil = 5 },
 }
 -- Casters start on oils; the rest on stones.
 local CLASS_WEAPON_PREFERENCE = { MAGE = "wizard", WARLOCK = "wizard", PRIEST = "mana", DRUID = "mana" }
@@ -115,20 +139,24 @@ local BLUNT_WEAPONS = { [4] = true, [5] = true, [10] = true }
 local WEAPON_CLASS = Enum.ItemClass and Enum.ItemClass.Weapon or 2
 
 -- The weapon in a slot (16 main hand, 17 off-hand): "sharp", "blunt",
--- "other", or nil with no weapon there (a shield, or nothing).
+-- "other", or nil with no weapon there (a shield, or nothing); then its
+-- weapon subclass.
 local function HeldEdge(slot)
     local itemID = GetInventoryItemID("player", slot)
     if not itemID then return nil end
     local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
     if classID ~= WEAPON_CLASS then return nil end
-    return SHARP_WEAPONS[subClassID] and "sharp" or BLUNT_WEAPONS[subClassID] and "blunt" or "other"
+    return SHARP_WEAPONS[subClassID] and "sharp" or BLUNT_WEAPONS[subClassID] and "blunt" or "other", subClassID
 end
 
--- Whether a weapon item of this type can go on a weapon with this edge.
--- With no weapon there's nothing to judge.
-local function FitsWeapon(itemType, edge)
+-- Whether a weapon item of this type can go on a weapon with this edge
+-- and subclass. With no weapon there's nothing to judge.
+local function FitsWeapon(itemType, edge, subClassID)
+    if edge == nil then return true end
+    local imbue = IMBUE_WEAPONS[itemType]
+    if imbue then return imbue[subClassID] == true end
     if itemType ~= "sharp" and itemType ~= "blunt" then return true end
-    return edge == nil or edge == "other" or edge == itemType
+    return edge == "other" or edge == itemType
 end
 
 -- Demonic Rune and Dark Rune: mana for health, on their own cooldown, apart
@@ -242,6 +270,7 @@ local PROFILE_DEFAULTS = {
     elixirGlow = true, -- the elixir buttons glow while their buff isn't on you
     -- scrollGlow: the same for the scroll button; starts as elixirGlow, which it was part of
     otherBuffGlow = true, -- the Other buffs button glows while its buff isn't on you
+    familiarGlow = true, -- the Familiar button glows while no familiar is out
     cureGlow = true, -- the cure buttons glow while you have a debuff they cure
     campOutdoorsOnly = true, -- the Camp gear button hides in dungeons, raids, cities and inns
     glowStyle = "soft", -- the reminder glow: soft (a halo), border, both, or proc (the action bars' sparkle)
@@ -255,7 +284,7 @@ local PROFILE_DEFAULTS = {
     perRow = 12, -- buttons per row before the bar wraps; 12 or more keeps one row
     order = {}, -- button keys from the first button on; filled in from ns.KINDS
     lowStock = {}, -- [button key] = warn at this many or fewer; unset: the kind's default
-    hideWhileOn = {}, -- [reminder: wellFed, elixir, scroll, otherBuff, weapon] = true: its buttons hide
+    hideWhileOn = {}, -- [reminder: wellFed, elixir, scroll, otherBuff, familiar, weapon] = true: its buttons hide
     -- while the buff is on; [cure] = true: the cure buttons hide while you have nothing to cure
     lowStockWarning = true, -- false: no count turns red, whatever the limits
     hidden = {}, -- [itemID] = true: no button uses it (see ns.SetHidden)
@@ -266,12 +295,12 @@ local PROFILE_DEFAULTS = {
 --     LEFT or RIGHT for one growing up or down (see ns.RowsToward)
 --   position = { frame = "player" or "screen", x, y } once the bar is
 --     dragged; until then it sits above the player frame
---   weaponPrefer = stone, wizard or mana: what the weapon button uses first
+--   weaponPrefer = stone, wizard, mana or imbue: what the weapon button uses first
 --     when you carry more than one kind; unset: your class's (see
 --     ns.WeaponPreference)
 --   scrollOrder = the scroll stats (see ns.SCROLL_STATS) in the order the
 --     scroll button uses them; unset: your class's (see ns.ScrollOrder)
---   wellFedMinutes, elixirMinutes, scrollMinutes, otherBuffMinutes, weaponMinutes = how long
+--   wellFedMinutes, elixirMinutes, scrollMinutes, otherBuffMinutes, familiarMinutes, weaponMinutes = how long
 --     before each runs out its reminder glows silver (0: never); see
 --     ns.RUNNING_OUT
 -- And from 1.1.0, carried into the first profile and then converted (see
@@ -280,7 +309,7 @@ local PROFILE_ONLY = { rowsToward = true, position = true, hideEatingInCombat = 
 
 -- The "running out" settings, each up to how long that kind of buff lasts,
 -- in minutes. Saved as <name>Minutes in the profile.
-ns.RUNNING_OUT = { wellFed = 15, elixir = 60, scroll = 30, otherBuff = 60, weapon = 30 }
+ns.RUNNING_OUT = { wellFed = 15, elixir = 60, scroll = 30, otherBuff = 60, familiar = 60, weapon = 30 }
 local DEFAULT_RUNNING_OUT = 2
 
 local DEFAULT_PROFILE = "Default"
@@ -511,6 +540,25 @@ local function CureKind(itemID)
         or (name:find(L["tourniquet"], 1, true) and "tourniquet")
 end
 
+local function IsMage()
+    return select(2, UnitClass("player")) == "MAGE"
+end
+
+-- The button for a scroll not in the lists: the scroll button, unless it
+-- belongs to a class ("Classes: Mage" in its tooltip). A mage's imbues go
+-- on the weapon button and familiars on their own; any other class scroll
+-- gets no button. nil while its tooltip isn't loaded. name: in lower case.
+local CLASSES_LINE = (ITEM_CLASSES_ALLOWED or "Classes: %s"):match("^(.-)%%s") or "Classes:"
+local function ScrollKind(itemID, name)
+    local restricted = TooltipHas(itemID, CLASSES_LINE)
+    if restricted == nil then return nil end
+    if not restricted then return "scroll" end
+    if not IsMage() then return false end
+    if name:find(L["scroll of imbue"], 1, true) then return "weapon" end
+    if name:find(L["familiar"], 1, true) then return "familiar" end
+    return false
+end
+
 -- The kind of button an item belongs on, or nil. Items the game hasn't
 -- loaded yet are requested and get sorted on the next scan.
 local function Classify(itemID)
@@ -524,6 +572,13 @@ local function Classify(itemID)
     if MANA_GEMS[itemID] then
         itemKinds[itemID] = "manaGem"
         return "manaGem"
+    end
+    local mageScroll = MAGE_SCROLLS[itemID]
+    if mageScroll ~= nil then
+        local key = mageScroll == "familiar" and "familiar" or (mageScroll and "weapon") or false
+        if not IsMage() then key = false end -- other classes can loot them, not use them
+        itemKinds[itemID] = key
+        return key or nil
     end
 
     local classID, subClassID = select(6, C_Item.GetItemInfoInstant(itemID))
@@ -600,7 +655,14 @@ local function Classify(itemID)
         elseif ELIXIR_SUBCLASSES[subClassID] or name:find(L["elixir"], 1, true) or paddedName:find(L["flask"], 1, true) then
             key = "elixir"
         elseif subClassID == SCROLL_SUBCLASS or name:find(L["scroll of"], 1, true) then
-            key = "scroll"
+            key = ScrollKind(itemID, name)
+            if key == nil then
+                undecided = true -- its tooltip isn't loaded yet
+                return nil
+            elseif key == false then
+                itemKinds[itemID] = false -- another class's scroll, or one with no button
+                return nil
+            end
         elseif name:find(L["sharpening stone"], 1, true) or name:find(L["weightstone"], 1, true)
             or name:find(L["wizard oil"], 1, true) or name:find(L["mana oil"], 1, true) then
             key = "weapon"
@@ -743,6 +805,7 @@ local function WeaponItemType(name)
     if lower:find(L["weightstone"], 1, true) then return "blunt" end
     if lower:find(L["wizard oil"], 1, true) then return "wizard" end
     if lower:find(L["mana oil"], 1, true) then return "mana" end
+    if lower:find(L["scroll of imbue"], 1, true) then return "imbue" end -- a newer one: any weapon
     return "oil"
 end
 
@@ -767,8 +830,10 @@ function ns.Scan()
     -- Stones go by the weapon the button puts them on: the main hand's, or
     -- the off-hand's with no weapon in the main hand.
     local weaponRank = WEAPON_PREFERENCE_ORDER[ns.WeaponPreference()]
-    local mainEdge, offEdge = HeldEdge(16), HeldEdge(17)
-    local edge = mainEdge or offEdge
+    local mainEdge, mainWeapon = HeldEdge(16)
+    local offEdge, offWeapon = HeldEdge(17)
+    local edge, weapon = mainEdge, mainWeapon
+    if not edge then edge, weapon = offEdge, offWeapon end
     for itemID, key in pairs(found) do
         local name, _, quality, itemLevel, minLevel, _, _, _, _, icon = C_Item.GetItemInfo(itemID)
         if name then
@@ -797,12 +862,13 @@ function ns.Scan()
             if key == "scroll" then
                 rank = statRank[ScrollStat(itemID)] or #ns.SCROLL_STATS + 1 -- unknown ones last
             elseif key == "weapon" then
-                weaponType = WEAPON_ITEMS[itemID] or WeaponItemType(name)
-                local family = (weaponType == "sharp" or weaponType == "blunt") and "stone" or weaponType
-                rank = weaponRank[family] or 5
+                weaponType = WEAPON_ITEMS[itemID] or MAGE_SCROLLS[itemID] or WeaponItemType(name)
+                local family = (weaponType == "sharp" or weaponType == "blunt") and "stone"
+                    or (IMBUE_WEAPONS[weaponType] or weaponType == "imbue") and "imbue" or weaponType
+                rank = weaponRank[family] or 6
                 anyWeapon = usable
-                fitsOff = FitsWeapon(weaponType, offEdge)
-                usable = usable and FitsWeapon(weaponType, edge)
+                fitsOff = FitsWeapon(weaponType, offEdge, offWeapon)
+                usable = usable and FitsWeapon(weaponType, edge, weapon)
             end
             local lists = db and db.hidden[itemID] and ns.hiddenItems or ns.items
             table.insert(lists[key], {
@@ -1043,6 +1109,11 @@ function ns.SetOtherBuffGlow(value)
     ns.UpdateBar()
 end
 
+function ns.SetFamiliarGlow(value)
+    db.familiarGlow = value and true or false
+    ns.UpdateBar()
+end
+
 function ns.SetCureGlow(value)
     db.cureGlow = value and true or false
     ns.UpdateBar()
@@ -1177,8 +1248,8 @@ function ns.OpenKeyBindings()
 end
 
 -- What the weapon button would rather put on your weapon when you carry
--- more than one kind: "stone", "wizard" (oil) or "mana" (oil). The
--- profile's choice, or your class's.
+-- more than one kind: "stone", "wizard" (oil), "mana" (oil) or "imbue" (a
+-- mage's imbue scroll). The profile's choice, or your class's.
 local function ClassWeaponPreference()
     return CLASS_WEAPON_PREFERENCE[select(2, UnitClass("player"))] or "stone"
 end
