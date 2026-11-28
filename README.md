@@ -12,8 +12,8 @@ just to heal up. Made for **WoW Forever**.
   like) and shows how long you're *Recently Bandaged*
 - **Plain food and buff food apart**, with a soft glow on the buff food
   while you're not Well Fed
-- **Stones, oils and poisons in one click**: no more clicking the item and
-  then your weapon
+- **Stones, oils, poisons and mage imbue scrolls in one click**: no more
+  clicking the item and then your weapon
 - **Neat in combat**: food and drink step aside during a fight and the rest
   of the bar closes up
 - **Picks the right item for you**: each button uses the best one you carry
@@ -48,7 +48,10 @@ just to heal up. Made for **WoW Forever**.
   first for a warrior, Agility for a hunter or rogue, Intellect for casters);
   sort them yourself under **Scroll order** on the options' Reminders page.
   It doesn't glow for a scroll a class buff already covers, like Stamina
-  under Power Word: Fortitude
+  under Power Word: Fortitude. Mage scrolls stay off it (see below)
+- **Familiar** (mages only): summons your best familiar scroll, Cat, Frog or
+  Rat, as soon as your level allows it. It glows gold while no familiar is
+  out, and silver near the end of its hour
 - **Other buffs**: anything else that raises a stat for a while, like
   Rumsey Rum Black Label, juju and buff drinks from fishing. It glows while
   its buff isn't on you
@@ -60,7 +63,11 @@ just to heal up. Made for **WoW Forever**.
   warlocks wizard oil, priests and druids mana oil), the rest stones; change
   it under **Weapon stone or oil** on the options' Items page. It glows gold
   while a weapon in your hands has nothing on it, and silver when it's
-  running out
+  running out. Mages also get their **imbue scrolls** here, each only for the
+  weapon it's made for (a staff, dagger or sword); choose **Imbues** to use
+  them before oils. Mage scrolls without a button (Cryoblast, Minor
+  Evocation and the like) stay off the bar, and other classes never get
+  mage scrolls at all
 - **Main-hand poison** and **Off-hand poison** (rogues only): one click puts
   the poison on that hand. Each button has its own poison, and glows while
   its hand has nothing on it
@@ -91,8 +98,8 @@ pulses. A preview shows the result as you change it.
 
 The silver glow starts 2 minutes before a buff or weapon stone runs out. On
 the options' Reminders page you can set it separately for Well Fed (up to 15
-minutes), elixirs (60), scrolls (30), other buffs (60) and weapons (30), or 0
-for none.
+minutes), elixirs (60), scrolls (30), other buffs (60), familiars (60, mages
+only) and weapons (30), or 0 for none.
 
 Each button uses the best item you carry that you can use: the food, drink,
 bandage or potion that restores the most, otherwise the highest level, and
@@ -186,7 +193,7 @@ Type `/fannypack` (or click the minimap button) to open the options.
 **Profiles**
 - Keep a whole bar setup per role, say one for tanking and one for healing:
   which buttons show, their order, the layout, the look, the low-stock
-  limits, the scroll order and stones or oils first
+  limits, the scroll order and stones, oils or imbues first
 - Each character uses a profile (Default to start). Switch, create, copy,
   reset and delete them in the options, or type `/fannypack profile <name>`
   (handy in a macro)

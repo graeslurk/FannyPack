@@ -8,16 +8,28 @@ local ADDON_NAME, ns = ...
 local L = ns.L
 
 -- Newest first. version: the release; chat: what the chat line says is
--- new; points: the card's lines, each with the options page it's on.
+-- new; points: the card's lines, each with the options page it's on and,
+-- optionally, the setting (a key UI.lua's NewsDot or NewsCardDot gives its
+-- row or card) that gets a dot, and the one class it's for (see ForYourClass).
 ns.WHATS_NEW = {
+    {
+        version = "1.10.0",
+        chat = L["mage imbue scrolls on the weapon button, and a Familiar button"],
+        points = {
+            { text = L["Imbue scrolls: the weapon button uses your imbue scrolls, each only on the weapon it's for. Choose Imbues to use them before oils."],
+                page = "items", setting = "weaponPreference", class = "MAGE" },
+            { text = L["Familiar: a new button summons your best familiar and glows while none is out."],
+                page = "buttons", class = "MAGE" },
+        },
+    },
     {
         version = "1.9.0",
         chat = L["scrolls in your class's order, and weapon stones that fit your weapon"],
         points = {
             { text = L["Scroll order: the scroll button uses your class's scrolls first. Drag the stats to change the order."],
-                page = "reminders" },
+                page = "reminders", setting = "scrollOrder" },
             { text = L["Weapon stones: only stones that fit your weapon, and oils first for casters. Choose stones or oils first."],
-                page = "items" },
+                page = "items", setting = "weaponPreference" },
         },
     },
     {
@@ -35,7 +47,7 @@ ns.WHATS_NEW = {
         chat = L["macros for your own action bars, and binding keys by hovering the buttons"],
         points = {
             { text = L["Macros: put a Fanny Pack button on any action bar as a macro that always uses the best item."],
-                page = "items" },
+                page = "items", setting = "macros" },
             { text = L["Bind keys: hover a button on the bar and press a key. Find it on the Buttons page, or type /fannypack bind."],
                 page = "buttons" },
         },
@@ -45,10 +57,11 @@ ns.WHATS_NEW = {
         chat = L["new glow looks, drag and drop to sort your buttons, and an Items page"],
         points = {
             { text = L["Glow look: make the reminder glow easier to see, as a border or the action bars' sparkle, stronger or steady."],
-                page = "reminders" },
+                page = "reminders", setting = "glowLook" },
             { text = L["Drag the rows on the Buttons page to sort your buttons."], page = "buttons" },
             { text = L["The new Items page holds your hidden items and how items are used."], page = "items" },
-            { text = L["A short tour of the bar for new players: replay it from the Bar page."], page = "bar" },
+            { text = L["A short tour of the bar for new players: replay it from the Bar page."], page = "bar",
+                setting = "tour" },
         },
     },
 }
@@ -89,9 +102,28 @@ local function EntriesAfter(seen)
     return list
 end
 
+-- Points for one class only are left out on the others, and so is an
+-- entry with no points left: a warrior hears nothing of mage scrolls.
+local function ForYourClass()
+    local class = select(2, UnitClass("player"))
+    local kept = {}
+    for _, entry in ipairs(ns.WHATS_NEW) do
+        local points = {}
+        for _, point in ipairs(entry.points) do
+            if not point.class or point.class == class then points[#points + 1] = point end
+        end
+        if #points > 0 then
+            entry.points = points
+            kept[#kept + 1] = entry
+        end
+    end
+    ns.WHATS_NEW = kept
+end
+
 -- At login: remember the version, and on the first login after an update
 -- with news, say so in chat (a moment later, after the login messages).
 function ns.InitNews()
+    ForYourClass()
     local account = ns.account
     local current = Current()
     account.newsPages = account.newsPages or {}

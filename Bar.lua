@@ -584,6 +584,37 @@ local function ItemBuffTimeLeft(name)
     return nil
 end
 
+-- The buffs a familiar gives you, named after it ("Frog Familiar"): the
+-- known ones, and for the familiar scrolls you carry their use effect and
+-- their name without "Scroll of".
+local FAMILIAR_BUFFS = { "Rat Familiar", "Frog Familiar", "Cat Familiar" }
+
+local function FamiliarBuffNames()
+    local names, prefix = {}, L["scroll of"]
+    for _, name in ipairs(FAMILIAR_BUFFS) do names[name] = true end
+    for _, list in ipairs({ ns.items.familiar or {}, ns.hiddenItems.familiar or {} }) do
+        for _, entry in ipairs(list) do
+            local spell = GetItemSpell(entry.itemID)
+            if spell then names[spell] = true end
+            if entry.name and ns.Lower(entry.name):sub(1, #prefix) == prefix then
+                names[strtrim(entry.name:sub(#prefix + 1))] = true
+            end
+        end
+    end
+    return names
+end
+
+-- Time left on your familiar, as AuraTimeLeft: any familiar counts, not
+-- only the one the button would summon.
+local function FamiliarTimeLeft()
+    local longest
+    for name in pairs(FamiliarBuffNames()) do
+        local left = AuraTimeLeft(name)
+        if left and (not longest or left > longest) then longest = left end
+    end
+    return longest
+end
+
 -- For the debug report: your buffs as the game gives them to addons, and
 -- what the buff reminders make of them. out(line) adds a line.
 function ns.AuraDebug(out)
@@ -625,6 +656,9 @@ function ns.AuraDebug(out)
         local button = buttons[key]
         local spell = button and button.itemID and GetItemSpell(button.itemID)
         if spell then Check(button.kind.name, spell) end
+    end
+    if buttons.familiar and buttons.familiar.itemID then
+        for name in pairs(FamiliarBuffNames()) do Check(buttons.familiar.kind.name, name) end
     end
 end
 
@@ -740,6 +774,8 @@ local function WantsGlow(button, empty)
         local main, off = WeaponGlow(16), WeaponGlow(17)
         if main == GLOW_MISSING or off == GLOW_MISSING then return GLOW_MISSING end
         return main or off
+    elseif key == "familiar" then
+        return ns.db.familiarGlow and GlowFor(FamiliarTimeLeft(), ns.db.familiarMinutes) or nil
     elseif button.kind.slot then -- poisons: their own hand
         return ns.db.weaponGlow and WeaponGlow(button.kind.slot) or nil
     elseif button.kind.buff then
@@ -758,6 +794,7 @@ end
 -- "Hide while on": which reminder each button belongs to.
 local REMINDER_OF = {
     buffFood = "wellFed", elixir = "elixir", elixir2 = "elixir", scroll = "scroll", otherBuff = "otherBuff",
+    familiar = "familiar",
     weapon = "weapon", poison = "weapon", poison2 = "weapon",
     antiVenom = "cure", poultice = "cure", tourniquet = "cure",
 }
@@ -774,6 +811,8 @@ local function BuffIsOn(key, itemID)
         return GlowFor(BuffTimeLeft(WELL_FED, "Well Fed"), ns.db.wellFedMinutes) == nil
     elseif key == "weapon" then
         return (HoldsWeapon(16) or HoldsWeapon(17)) and WeaponGlow(16) == nil and WeaponGlow(17) == nil
+    elseif key == "familiar" then
+        return GlowFor(FamiliarTimeLeft(), ns.db.familiarMinutes) == nil
     end
     local slot = ns.KIND_BY_KEY[key].slot
     if slot then

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.10.0
+
+New:
+- **Mage imbue scrolls on the weapon button**: Forever's imbue scrolls (Lesser Flame, Frost, Chillknife, Spark and the rest) now go on the weapon stone or oil button, and one click puts the imbue on your weapon, no clicking the weapon afterwards. Each is only used on the weapon it's made for: staff imbues on a staff, dagger imbues on a dagger, Spark on a sword; one that doesn't fit is shown in red. An imbue replaces an oil, so mages get a fourth choice under **Weapon stone or oil** on the Items page: pick **Imbues** to use them before wizard and mana oil
+- **Familiar button** (mages only): summons your best familiar scroll, Cat, Frog or Rat, as soon as your level allows it. It glows gold while no familiar is out and silver near the end of its hour, with its own **Familiars** row on the Reminders page for the timing, **Hide while on** and the glow
+
+Fixed:
+- **Mage scrolls stay off the scroll button**: before, they were sorted in behind every stat scroll you carried. Mage scrolls that have no button now (Cryoblast, Minor Evocation, Liminal Passage, Khadgar's Unlocking, Confuse Beast, Rebuke Elemental and the weapon-making scrolls) stay off the bar, and other classes no longer get any mage scroll they've looted
+
 ## 1.9.0
 
 New:
